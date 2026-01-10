@@ -5,9 +5,6 @@ import type { Receipt } from "@/lib/types";
 export function ReceiptCard({ receipt, notice }: { receipt: Receipt; notice: string }) {
   return (
     <div className="card p-4 md:p-6" id="receipt-root">
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-[160px_1fr_280px]">
-        <div className="flex items-stretch">
-          <div className="w-full rounded-2xl border-4 border-emerald-600 p-4 text-center">
             <div className="text-xs text-slate-600">닉네임</div>
             <div className="mt-2 text-2xl font-bold">{receipt.nickname}</div>
           </div>

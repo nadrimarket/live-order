@@ -1,6 +1,6 @@
 "use client";
 
-import { Receipt } from "@/lib/types";
+import React from "react";
 
 export function ReceiptCard({ receipt, notice }: { receipt: Receipt; notice: string }) {
   return (

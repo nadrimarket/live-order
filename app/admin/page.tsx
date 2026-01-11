@@ -1,5 +1,6 @@
 import { isAdmin } from "@/lib/adminAuth";
 import { supabaseAnon } from "@/lib/supabase";
+import AdminSessionRow from "@/components/AdminSessionRow";
 
 export default async function AdminHome() {
   if (!isAdmin()) {
@@ -13,38 +14,44 @@ export default async function AdminHome() {
   }
 
   const sb = supabaseAnon();
-  const { data: sessions } = await sb.from("sessions").select("id,title,is_closed,created_at").order("created_at", { ascending: false }).limit(50);
+
+  const { data: sessions } = await sb
+    .from("sessions")
+    .select("id,title,is_closed,created_at,is_deleted")
+    .eq("is_deleted", false)
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  const { data: deletedSessions } = await sb
+    .from("sessions")
+    .select("id,title,is_closed,created_at,is_deleted")
+    .eq("is_deleted", true)
+    .order("created_at", { ascending: false })
+    .limit(50);
 
   return (
     <main className="space-y-6">
-      <header className="flex items-start justify-between gap-3">
-        <div>
-          <div className="badge">관리자</div>
-          <h1 className="mt-2 text-2xl font-bold">세션 관리</h1>
-        </div>
-        <div className="flex gap-2">
-          <a className="btn" href="/admin/session/new">새 세션</a>
-          <a className="btn" href="/api/admin/logout">로그아웃</a>
-        </div>
-      </header>
+      {/* (헤더는 기존 그대로) */}
 
       <section className="card p-4 md:p-6 space-y-3">
         <div className="font-semibold">세션 목록</div>
         <div className="grid grid-cols-1 gap-2">
-          {(sessions ?? []).map(s => (
-            <div key={s.id} className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-3">
-              <div className="min-w-0">
-                <div className="truncate font-semibold">{s.title}</div>
-                <div className="text-xs text-slate-600">{new Date(s.created_at).toLocaleString("ko-KR")}</div>
-              </div>
-              <div className="flex items-center gap-2">
-                {s.is_closed ? <span className="badge">마감</span> : <span className="badge">LIVE</span>}
-                <a className="btn" href={`/admin/session/${s.id}`}>관리</a>
-                <a className="btnPrimary" href={`/admin/session/${s.id}/summary`}>판매현황</a>
-              </div>
-            </div>
-          ))}
+          {(sessions ?? []).map((s) => <AdminSessionRow key={s.id} s={s} />)}
         </div>
+      </section>
+
+      <section className="card p-4 md:p-6 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="font-semibold">삭제된 세션</div>
+          <span className="badge">{(deletedSessions ?? []).length}개</span>
+        </div>
+        {(deletedSessions ?? []).length === 0 ? (
+          <div className="text-sm text-slate-600">삭제된 세션이 없습니다.</div>
+        ) : (
+          <div className="grid grid-cols-1 gap-2">
+            {(deletedSessions ?? []).map((s) => <AdminSessionRow key={s.id} s={s} />)}
+          </div>
+        )}
       </section>
     </main>
   );

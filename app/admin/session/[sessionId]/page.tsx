@@ -50,6 +50,66 @@ export default function AdminSession({ params }: { params: { sessionId: string }
           <a className="btn" href={`/s/${sessionId}`}>고객 페이지</a>
           <a className="btn" href="/admin">세션 목록</a>
           <a className="btnPrimary" href={`/admin/session/${sessionId}/summary`}>판매현황</a>
+          <button
+  className="btn"
+  onClick={async () => {
+    // 1️⃣ 주문 건수 조회 (경고용)
+    const r = await fetch(
+      `/api/admin/session/order-count?sessionId=${encodeURIComponent(sessionId)}`
+    );
+    const j = await r.json();
+    const orderCount = r.ok && j.ok ? (j.count ?? 0) : 0;
+
+    const isDeleted = !!session?.is_deleted;
+
+    // 2️⃣ 삭제 로직
+    if (!isDeleted) {
+      const ok = confirm(
+        orderCount > 0
+          ? `⚠️ 이 세션에는 주문이 ${orderCount}건 있습니다.\n\n세션을 삭제(숨김)해도 주문 데이터는 남아있습니다.\n정말 삭제할까요?`
+          : "정말 이 세션을 삭제할까요?\n(세션은 목록에서 숨김 처리됩니다.)"
+      );
+      if (!ok) return;
+
+      const res = await fetch("/api/admin/session/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId }),
+      });
+      const jj = await res.json();
+
+      if (!res.ok || !jj.ok) {
+        alert(jj?.error ?? "삭제 실패");
+        return;
+      }
+
+      alert("세션이 삭제되었습니다.");
+      await reload(); // ⭐ 기존 reload() 그대로 사용
+      return;
+    }
+
+    // 3️⃣ 복구 로직
+    const ok2 = confirm("이 세션을 복구할까요? (목록에 다시 표시됩니다)");
+    if (!ok2) return;
+
+    const res2 = await fetch("/api/admin/session/restore", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId }),
+    });
+    const jj2 = await res2.json();
+
+    if (!res2.ok || !jj2.ok) {
+      alert(jj2?.error ?? "복구 실패");
+      return;
+    }
+
+    alert("세션이 복구되었습니다.");
+    await reload();
+  }}
+>
+  {session?.is_deleted ? "세션 복구" : "세션 삭제"}
+</button>
         </div>
       </header>
 

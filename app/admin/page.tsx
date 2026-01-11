@@ -17,8 +17,7 @@ export default async function AdminHome() {
 
   const { data: sessions } = await sb
     .from("sessions")
-    .select("id,title,is_closed,created_at,is_deleted")
-    .eq("is_deleted", false)
+    .select("id,title,is_closed,is_deleted,created_at")
     .order("created_at", { ascending: false })
     .limit(50);
 

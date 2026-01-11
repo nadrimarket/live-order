@@ -242,6 +242,30 @@ export default function AdminSession({ params }: { params: { sessionId: string }
                     <div className="flex flex-wrap gap-2">
                       <a className="btn" href={`/order/edit/${o.edit_token}`}>수정</a>
                       <a className="btnPrimary" href={`/receipt/token/${o.edit_token}`}>정산서(JPG)</a>
+    <button
+      className="btn"
+      onClick={async () => {
+        const ok = confirm(`${o.nickname}님의 주문을 삭제(숨김)할까요?`);
+        if (!ok) return;
+
+        const res = await fetch("/api/admin/order/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ orderId: o.id }),
+        });
+        const j = await res.json();
+        if (!res.ok || !j.ok) {
+          alert(j?.error ?? "삭제 실패");
+          return;
+        }
+
+        await reload();
+      }}
+    >
+      주문 삭제
+    </button>
+  </div>
+</td>
                       <button className="btn" onClick={async ()=>{
                         const msg =
 `[정산 안내]\n${o.nickname}님\n정산서: ${location.origin}/receipt/token/${o.edit_token}\n(위 링크에서 JPG 저장 가능)\n\n연락처: ${o.phone ?? "-"}\n주소: ${(o.postal_code ? `[${o.postal_code}] ` : "") + (o.address1 ?? "") + (o.address2 ? " " + o.address2 : "")}`;

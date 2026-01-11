@@ -97,6 +97,57 @@ export default function SessionOrderPage({ params }: { params: { sessionId: stri
   if (!session) return <div className="text-slate-600">세션이 없어요. {msg}</div>;
 
   // ✅ 성공 화면: 링크를 “보여주기”가 아니라 버튼으로 “바로 이동”
+    const MyOrdersSection = (
+    myTokens.length > 0 && (
+      <section className="card p-4 md:p-6 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="font-semibold">이 기기에서 만든 내 주문</div>
+          <button
+            className="btn"
+            onClick={() => {
+              if (!confirm("이 기기에서 저장된 주문 바로가기 목록을 삭제할까요?")) return;
+              localStorage.removeItem(storageKey);
+              setMyTokens([]);
+            }}
+          >
+            목록 지우기
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 gap-2">
+          {myTokens.map((t) => (
+            <div
+              key={t.token}
+              className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2"
+            >
+              <div className="min-w-0">
+                <div className="truncate font-semibold">
+                  {t.nickname ? `${t.nickname} 주문` : "내 주문"}
+                </div>
+                <div className="text-xs text-slate-600">
+                  {new Date(t.createdAt).toLocaleString("ko-KR")}
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <a className="btnPrimary" href={`/order/edit/${t.token}`}>
+                  수정하기
+                </a>
+                <a className="btn" href={`/receipt/token/${t.token}`}>
+                  정산서
+                </a>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="text-xs text-slate-500">
+          * 이 목록은 이 기기/브라우저에만 저장됩니다. (다른 기기에서는 보이지 않을 수 있어요.)
+        </div>
+      </section>
+    )
+  );
+
   if (success) {
     const editUrl = `/order/edit/${success.editToken}`;
     const receiptUrl = `/receipt/token/${success.editToken}`;
@@ -168,54 +219,9 @@ export default function SessionOrderPage({ params }: { params: { sessionId: stri
             새로 주문하기
           </button>
         </section>
-        {myTokens.length > 0 && (
-  <section className="card p-4 md:p-6 space-y-3">
-    <div className="flex items-center justify-between">
-      <div className="font-semibold">이 기기에서 만든 내 주문</div>
-      <button
-        className="btn"
-        onClick={() => {
-          if (!confirm("이 기기에서 저장된 주문 바로가기 목록을 삭제할까요?")) return;
-          localStorage.removeItem(storageKey);
-          setMyTokens([]);
-        }}
-      >
-        목록 지우기
-      </button>
-    </div>
 
-    <div className="grid grid-cols-1 gap-2">
-      {myTokens.map((t) => (
-        <div
-          key={t.token}
-          className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2"
-        >
-          <div className="min-w-0">
-            <div className="truncate font-semibold">
-              {t.nickname ? `${t.nickname} 주문` : "내 주문"}
-            </div>
-            <div className="text-xs text-slate-600">
-              {new Date(t.createdAt).toLocaleString("ko-KR")}
-            </div>
-          </div>
-
-          <div className="flex gap-2">
-            <a className="btnPrimary" href={`/order/edit/${t.token}`}>
-              수정하기
-            </a>
-            <a className="btn" href={`/receipt/token/${t.token}`}>
-              정산서
-            </a>
-          </div>
-        </div>
-      ))}
-    </div>
-
-    <div className="text-xs text-slate-500">
-      * 이 목록은 이 기기/브라우저에만 저장됩니다.
-    </div>
-  </section>
-)}
+        {MyOrdersSection}
+        
       </main>
     );
   }
@@ -354,6 +360,9 @@ export default function SessionOrderPage({ params }: { params: { sessionId: stri
 
               // ✅ 성공 화면으로 전환 (여기서 “한 번 클릭 수정” 구현)
               setSuccess({ editToken: json.editToken });
+              
+              saveMyToken({ token: json.editToken, createdAt: Date.now(), nickname: nn });
+              setMyTokens(loadMyTokens());
 
               // 기존 입력값은 성공 화면에서 '새로 주문하기' 눌렀을 때 초기화하도록 둠
             } catch (e: any) {

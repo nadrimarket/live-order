@@ -83,7 +83,7 @@ export default function AdminSession({ params }: { params: { sessionId: string }
     await reload();
   };
 
-   return <div>ok</div>;
+   return (
     <main className="space-y-6">
       <header className="flex items-start justify-between gap-3">
         <div>

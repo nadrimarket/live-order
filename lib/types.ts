@@ -18,6 +18,7 @@ export type Session = {
   ship_fee_normal: number;
   ship_fee_jeju: number;
   created_at: string;
+  is_deleted?: boolean;
 };
 
 export type ReceiptLine = { name: string; qty: number; amount: number };

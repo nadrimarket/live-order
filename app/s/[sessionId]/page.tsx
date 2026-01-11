@@ -7,6 +7,46 @@ import { ShippingType, Product, Session } from "@/lib/types";
 
 export default function SessionOrderPage({ params }: { params: { sessionId: string } }) {
   const { sessionId } = params;
+
+  // ✅ "내 주문 찾기" 토큰을 세션별로 localStorage에 저장하기 위한 유틸
+  type MyOrderToken = { token: string; createdAt: number; nickname?: string };
+
+  const storageKey = useMemo(() => `liveorder:mytokens:${sessionId}`, [sessionId]);
+
+  const loadMyTokens = useCallback((): MyOrderToken[] => {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) return [];
+      const arr = JSON.parse(raw);
+      if (!Array.isArray(arr)) return [];
+
+      return arr
+        .filter((x) => x && typeof x.token === "string")
+        .map((x) => ({
+          token: String(x.token),
+          createdAt: typeof x.createdAt === "number" ? x.createdAt : Date.now(),
+          nickname: typeof x.nickname === "string" ? x.nickname : undefined,
+        }))
+        .sort((a, b) => b.createdAt - a.createdAt);
+    } catch {
+      return [];
+    }
+  }, [storageKey]);
+
+  const saveMyToken = useCallback(
+    (t: MyOrderToken) => {
+      try {
+        const prev = loadMyTokens();
+        const next = [t, ...prev.filter((p) => p.token !== t.token)].slice(0, 20);
+        localStorage.setItem(storageKey, JSON.stringify(next));
+      } catch {}
+    },
+    [loadMyTokens, storageKey]
+  );
+
+  // ✅ UI에 보여줄 "이 기기에서 만든 내 주문" 목록
+  const [myTokens, setMyTokens] = useState<MyOrderToken[]>([]);
+
   const [loaded, setLoaded] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
@@ -23,6 +63,11 @@ export default function SessionOrderPage({ params }: { params: { sessionId: stri
 
   // ✅ 주문 성공 후 “한 번 클릭 수정”을 위한 상태
   const [success, setSuccess] = useState<null | { editToken: string }>(null);
+
+  // ✅ 재접속해도 이 기기에서 만든 주문 토큰을 다시 불러오기
+  useEffect(() => {
+    setMyTokens(loadMyTokens());
+  }, [loadMyTokens]);
 
   useEffect(() => {
     (async () => {
@@ -123,6 +168,54 @@ export default function SessionOrderPage({ params }: { params: { sessionId: stri
             새로 주문하기
           </button>
         </section>
+        {myTokens.length > 0 && (
+  <section className="card p-4 md:p-6 space-y-3">
+    <div className="flex items-center justify-between">
+      <div className="font-semibold">이 기기에서 만든 내 주문</div>
+      <button
+        className="btn"
+        onClick={() => {
+          if (!confirm("이 기기에서 저장된 주문 바로가기 목록을 삭제할까요?")) return;
+          localStorage.removeItem(storageKey);
+          setMyTokens([]);
+        }}
+      >
+        목록 지우기
+      </button>
+    </div>
+
+    <div className="grid grid-cols-1 gap-2">
+      {myTokens.map((t) => (
+        <div
+          key={t.token}
+          className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2"
+        >
+          <div className="min-w-0">
+            <div className="truncate font-semibold">
+              {t.nickname ? `${t.nickname} 주문` : "내 주문"}
+            </div>
+            <div className="text-xs text-slate-600">
+              {new Date(t.createdAt).toLocaleString("ko-KR")}
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <a className="btnPrimary" href={`/order/edit/${t.token}`}>
+              수정하기
+            </a>
+            <a className="btn" href={`/receipt/token/${t.token}`}>
+              정산서
+            </a>
+          </div>
+        </div>
+      ))}
+    </div>
+
+    <div className="text-xs text-slate-500">
+      * 이 목록은 이 기기/브라우저에만 저장됩니다.
+    </div>
+  </section>
+)}
       </main>
     );
   }

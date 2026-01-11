@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ProductGrid } from "@/components/ProductGrid";
 import AddressField from "@/components/AddressField";
 import { ShippingType, Product, Session } from "@/lib/types";

@@ -227,10 +227,11 @@ export default function AdminSession({ params }: { params: { sessionId: string }
                   <td className="px-3 py-2 text-slate-700">
                     {(o.postal_code ? `[${o.postal_code}] ` : "") + (o.address1 ?? "") + (o.address2 ? " " + o.address2 : "")}
                   </td>
-                  <td className="px-3 py-2">
-                    <div className="flex flex-wrap gap-2">
-                      <a className="btn" href={`/order/edit/${o.edit_token}`}>수정</a>
-                      <a className="btnPrimary" href={`/receipt/token/${o.edit_token}`}>정산서(JPG)</a>
+<td className="px-3 py-2">
+  <div className="flex flex-wrap gap-2">
+    <a className="btn" href={`/order/edit/${o.edit_token}`}>수정</a>
+    <a className="btnPrimary" href={`/receipt/token/${o.edit_token}`}>정산서(JPG)</a>
+
     <button
       className="btn"
       onClick={async () => {
@@ -243,13 +244,28 @@ export default function AdminSession({ params }: { params: { sessionId: string }
           body: JSON.stringify({ orderId: o.id }),
         });
         const j = await res.json();
+
         if (!res.ok || !j.ok) {
           alert(j?.error ?? "삭제 실패");
+          return;
+        }
 
         await reload();
       }}
     >
       주문 삭제
+    </button>
+
+    <button
+      className="btn"
+      onClick={async () => {
+        const msg =
+`[정산 안내]\n${o.nickname}님\n정산서: ${location.origin}/receipt/token/${o.edit_token}\n(위 링크에서 JPG 저장 가능)\n\n연락처: ${o.phone ?? "-"}\n주소: ${(o.postal_code ? `[${o.postal_code}] ` : "") + (o.address1 ?? "") + (o.address2 ? " " + o.address2 : "")}`;
+        await navigator.clipboard.writeText(msg);
+        alert("카톡으로 보낼 문구를 복사했어요. 카카오톡에 붙여넣기 하시면 됩니다.");
+      }}
+    >
+      카톡문구 복사
     </button>
   </div>
 </td>

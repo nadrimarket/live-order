@@ -13,6 +13,7 @@ export async function GET(req: Request) {
     .from("orders")
     .select("id,session_id,nickname,shipping,phone,postal_code,address1,address2,edit_token,created_at")
     .eq("session_id", sessionId)
+    .eq("is_deleted", false)
     .order("created_at", { ascending: false })
     .limit(5000);
 

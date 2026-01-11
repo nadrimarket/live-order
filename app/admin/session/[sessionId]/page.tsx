@@ -256,8 +256,6 @@ export default function AdminSession({ params }: { params: { sessionId: string }
         const j = await res.json();
         if (!res.ok || !j.ok) {
           alert(j?.error ?? "삭제 실패");
-          return;
-        }
 
         await reload();
       }}

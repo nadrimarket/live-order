@@ -66,6 +66,8 @@ export default function SessionOrderPage({ params }: { params: { sessionId: stri
 
   // ✅ 재접속해도 이 기기에서 만든 주문 토큰을 다시 불러오기
   useEffect(() => {
+  const arr = loadMyTokens();
+  console.log("myTokens loaded:", arr);
     setMyTokens(loadMyTokens());
   }, [loadMyTokens]);
 
@@ -362,7 +364,6 @@ export default function SessionOrderPage({ params }: { params: { sessionId: stri
 
               // ✅ 성공 화면으로 전환 (여기서 “한 번 클릭 수정” 구현)
               setSuccess({ editToken: json.editToken });
-              
               saveMyToken({ token: json.editToken, createdAt: Date.now(), nickname: nn });
               setMyTokens(loadMyTokens());
 

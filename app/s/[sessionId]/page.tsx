@@ -164,6 +164,8 @@ export default function SessionOrderPage({ params }: { params: { sessionId: stri
           </a>
         </header>
 
+        {MyOrdersSection} 
+
         <section className="card p-4 md:p-6 space-y-3">
           <div className="text-lg font-bold">✅ 주문이 접수되었습니다!</div>
           <div className="text-sm text-slate-600">

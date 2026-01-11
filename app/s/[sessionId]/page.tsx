@@ -225,7 +225,7 @@ export default function SessionOrderPage({ params }: { params: { sessionId: stri
         </section>
 
         {MyOrdersSection}
-        
+
       </main>
     );
   }
@@ -247,6 +247,8 @@ export default function SessionOrderPage({ params }: { params: { sessionId: stri
         </a>
       </header>
 
+     {MyOrdersSection}
+      
       <section className="card p-4 md:p-6 space-y-3">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <div>

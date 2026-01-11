@@ -38,31 +38,15 @@ export default function AdminSession({ params }: { params: { sessionId: string }
   if (!loaded) return <div className="text-slate-600">불러오는 중…</div>;
   if (!session) return <div className="text-slate-600">세션 없음. {msg}</div>;
 
-  return (
-    <main className="space-y-6">
-      <header className="flex items-start justify-between gap-3">
-        <div>
-          <div className="badge">관리자</div>
-          <h1 className="mt-2 text-2xl font-bold">{session.title}</h1>
-          <div className="mt-1 text-sm text-slate-600">세션ID: <span className="font-mono">{session.id}</span></div>
-        </div>
-        <div className="flex gap-2">
-          <a className="btn" href={`/s/${sessionId}`}>고객 페이지</a>
-          <a className="btn" href="/admin">세션 목록</a>
-          <a className="btnPrimary" href={`/admin/session/${sessionId}/summary`}>판매현황</a>
-          <button
-  className="btn"
-  onClick={async () => {
-    // 1️⃣ 주문 건수 조회 (경고용)
+    const isDeleted = !!(session as any)?.is_deleted;
+
+  const onToggleDeleteRestore = async () => {
     const r = await fetch(
       `/api/admin/session/order-count?sessionId=${encodeURIComponent(sessionId)}`
     );
     const j = await r.json();
     const orderCount = r.ok && j.ok ? (j.count ?? 0) : 0;
 
-    const isDeleted = !!session?.is_deleted;
-
-    // 2️⃣ 삭제 로직
     if (!isDeleted) {
       const ok = confirm(
         orderCount > 0
@@ -77,18 +61,13 @@ export default function AdminSession({ params }: { params: { sessionId: string }
         body: JSON.stringify({ sessionId }),
       });
       const jj = await res.json();
-
-      if (!res.ok || !jj.ok) {
-        alert(jj?.error ?? "삭제 실패");
-        return;
-      }
+      if (!res.ok || !jj.ok) return alert(jj?.error ?? "삭제 실패");
 
       alert("세션이 삭제되었습니다.");
-      await reload(); // ⭐ 기존 reload() 그대로 사용
+      await reload();
       return;
     }
 
-    // 3️⃣ 복구 로직
     const ok2 = confirm("이 세션을 복구할까요? (목록에 다시 표시됩니다)");
     if (!ok2) return;
 
@@ -98,18 +77,28 @@ export default function AdminSession({ params }: { params: { sessionId: string }
       body: JSON.stringify({ sessionId }),
     });
     const jj2 = await res2.json();
-
-    if (!res2.ok || !jj2.ok) {
-      alert(jj2?.error ?? "복구 실패");
-      return;
-    }
+    if (!res2.ok || !jj2.ok) return alert(jj2?.error ?? "복구 실패");
 
     alert("세션이 복구되었습니다.");
     await reload();
-  }}
->
-  {session?.is_deleted ? "세션 복구" : "세션 삭제"}
-</button>
+  };
+
+  return (
+    <main className="space-y-6">
+      <header className="flex items-start justify-between gap-3">
+        <div>
+          <div className="badge">관리자</div>
+          <h1 className="mt-2 text-2xl font-bold">{session.title}</h1>
+          <div className="mt-1 text-sm text-slate-600">세션ID: <span className="font-mono">{session.id}</span></div>
+        </div>
+        <div className="flex gap-2">
+          <a className="btn" href={`/s/${sessionId}`}>고객 페이지</a>
+          <a className="btn" href="/admin">세션 목록</a>
+          <a className="btnPrimary" href={`/admin/session/${sessionId}/summary`}>판매현황</a>
+
+          <button className="btn" onClick={onToggleDeleteRestore}>
+           {isDeleted ? "세션 복구" : "세션 삭제"}
+          </button>
         </div>
       </header>
 

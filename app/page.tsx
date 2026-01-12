@@ -1,5 +1,7 @@
 import { supabaseAnon } from "@/lib/supabase";
 
+export const dynamic = "force-dynamic";
+
 export default async function Home() {
   const sb = supabaseAnon();
   const { data: sessions, error } = await sb

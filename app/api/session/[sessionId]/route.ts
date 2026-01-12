@@ -11,7 +11,7 @@ export async function GET(_: Request, { params }: { params: { sessionId: string 
     .from("sessions")
     .select("*")
     .eq("id", params.sessionId)
-    .is("deleted_at", null)
+    .filter("deleted_at", "is", null)
     .single();
 
   // 삭제된 세션이거나 없는 세션이면 404 느낌으로 처리

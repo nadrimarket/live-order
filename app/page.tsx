@@ -4,8 +4,8 @@ export default async function Home() {
   const sb = supabaseAnon();
   const { data: sessions, error } = await sb
     .from("sessions")
-    .is("deleted_at", null)
     .select("id,title,is_closed,created_at")
+    .filter("deleted_at", "is", null)
     .order("created_at", { ascending: false })
     .limit(20);
 

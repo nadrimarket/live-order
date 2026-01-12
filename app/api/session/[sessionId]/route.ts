@@ -1,20 +1,16 @@
 import { NextResponse } from "next/server";
-import { isAdmin } from "@/lib/adminAuth";
 import { supabaseService } from "@/lib/supabase";
 
 export async function GET(_: Request, { params }: { params: { sessionId: string } }) {
-  if (!isAdmin()) return NextResponse.json({ error: "관리자 권한 필요" }, { status: 401 });
   const sb = supabaseService();
 
-  // ✅ 삭제된 세션 제외
   const { data: session, error: e1 } = await sb
     .from("sessions")
     .select("*")
     .eq("id", params.sessionId)
-    .filter("deleted_at", "is", null)
+    .eq("is_deleted", false) // ✅ 핵심: 삭제된 세션 차단
     .single();
 
-  // 삭제된 세션이거나 없는 세션이면 404 느낌으로 처리
   if (e1 || !session) {
     return NextResponse.json({ error: "세션을 찾을 수 없음" }, { status: 404 });
   }

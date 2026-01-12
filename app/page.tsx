@@ -7,7 +7,7 @@ export default async function Home() {
   const { data: sessions, error } = await sb
     .from("sessions")
     .select("id,title,is_closed,created_at")
-    .filter("deleted_at", "is", null)
+    .eq("is_deleted", false)
     .order("created_at", { ascending: false })
     .limit(20);
 

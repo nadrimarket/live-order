@@ -2,6 +2,8 @@ import { isAdmin } from "@/lib/adminAuth";
 import { supabaseAnon } from "@/lib/supabase";
 import AdminSessionRow from "@/components/AdminSessionRow";
 
+export const dynamic = "force-dynamic";
+
 export default async function AdminHome() {
   if (!isAdmin()) {
     return (

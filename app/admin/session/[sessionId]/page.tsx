@@ -559,7 +559,6 @@ export default function AdminSessionPage({ params }: { params: { sessionId: stri
             <td className="px-3 py-2 truncate">{o.phone ?? "-"}</td>
             <td className="px-3 py-2 truncate">{o.shipping ?? "-"}</td>
 
-            {/* ✅ 주소: 2줄까지만 + 줄바꿈 */}
             <td className="px-3 py-2 text-slate-700">
               <div className="text-[11px] text-slate-500 truncate">{postal || ""}</div>
               <div className="text-sm break-words leading-snug line-clamp-2">{addr || "-"}</div>
@@ -592,7 +591,6 @@ export default function AdminSessionPage({ params }: { params: { sessionId: stri
                   정산서
                 </a>
 
-                {/* ✅ 삭제: 기존 로직 연결 */}
                 <button
                   className="btn h-8 px-3 text-xs rounded-full"
                   onClick={async () => {
@@ -615,7 +613,6 @@ export default function AdminSessionPage({ params }: { params: { sessionId: stri
                   삭제
                 </button>
 
-                {/* ✅ 카톡: 기존 로직 연결 */}
                 <button
                   className="btn h-8 px-3 text-xs rounded-full"
                   onClick={async () => {
@@ -644,6 +641,7 @@ export default function AdminSessionPage({ params }: { params: { sessionId: stri
     </tbody>
   </table>
 </div>
+
 </div>
 
       </section>

@@ -10,6 +10,11 @@ type EditForm = {
   sort_order: string;
 };
 
+type ManualLine = { product_id: string; qty: number };
+
+// 배송 타입(프로젝트에 이미 쓰는 값이 있으면 그걸로 맞추면 됨)
+type ShippingType = "택배" | "직거래" | "기타";
+
 export default function AdminSessionPage({ params }: { params: { sessionId: string } }) {
   const { sessionId } = params;
 
@@ -42,10 +47,119 @@ export default function AdminSessionPage({ params }: { params: { sessionId: stri
   });
   const [savingEdit, setSavingEdit] = useState(false);
 
+  // ===== 수기 주문(관리자) =====
+  const [mNick, setMNick] = useState("");
+  const [mPhone, setMPhone] = useState("");
+  const [mPostal, setMPostal] = useState("");
+  const [mAddr1, setMAddr1] = useState("");
+  const [mAddr2, setMAddr2] = useState("");
+  const [mShipping, setMShipping] = useState<ShippingType>("택배");
+  const [mLines, setMLines] = useState<ManualLine[]>([]);
+  const [mSubmitting, setMSubmitting] = useState(false);
+
+  function setLineQty(product_id: string, qty: number) {
+    const safeQty = Number.isFinite(qty) ? qty : 0;
+
+    setMLines((prev) => {
+      const next = [...prev];
+      const idx = next.findIndex((x) => x.product_id === product_id);
+
+      if (safeQty <= 0) {
+        if (idx >= 0) next.splice(idx, 1);
+        return next;
+      }
+
+      if (idx >= 0) next[idx] = { product_id, qty: safeQty };
+      else next.push({ product_id, qty: safeQty });
+      return next;
+    });
+  }
+
+  const manualTotal = useMemo(() => {
+    const map = new Map<string, any>();
+    (products ?? []).forEach((p: any) => map.set(p.id, p));
+
+    const total_qty = (mLines ?? []).reduce((a, l) => a + (Number(l.qty) || 0), 0);
+    const total_amount = (mLines ?? []).reduce((a, l) => {
+      const p = map.get(l.product_id);
+      const price = Number(p?.price ?? 0) || 0;
+      return a + price * (Number(l.qty) || 0);
+    }, 0);
+
+    return { total_qty, total_amount };
+  }, [mLines, products]);
+
+  async function createManualOrder() {
+    const nickname = mNick.trim();
+    if (!nickname) return alert("닉네임을 입력하세요.");
+    if (!mLines.length) return alert("상품/수량을 선택하세요.");
+
+    // 품절/숨김/삭제 상품이 끼어들면 클라에서도 한번 더 막기
+    const pMap = new Map<string, any>();
+    (products ?? []).forEach((p: any) => pMap.set(p.id, p));
+
+    for (const l of mLines) {
+      const p = pMap.get(l.product_id);
+      if (!p) return alert("선택된 상품이 목록에 없습니다. 새로고침 후 다시 시도하세요.");
+      if (p.deleted_at) return alert(`삭제된 상품이 포함되어 있습니다: ${p.name}`);
+      if (p.is_hidden) return alert(`숨김 상품이 포함되어 있습니다: ${p.name}`);
+      if (p.is_soldout) return alert(`품절 상품은 수기주문에 담을 수 없습니다: ${p.name}`);
+    }
+
+    setMSubmitting(true);
+    try {
+      // 기존 프로젝트에서 admin PIN을 localStorage에 저장하고 있다면 그대로 사용
+      // 없으면 빈 값으로 보내도 되며, 서버가 PIN을 강제하지 않는 구조라면 무시됨
+      const adminPin = localStorage.getItem("admin_pin") || "";
+
+      const res = await fetch("/api/admin/orders/manual/create", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(adminPin ? { "x-admin-pin": adminPin } : {}),
+        },
+        body: JSON.stringify({
+          session_id: sessionId,
+          nickname,
+          phone: mPhone.trim(),
+          postal_code: mPostal.trim(),
+          address1: mAddr1.trim(),
+          address2: mAddr2.trim(),
+          shipping: mShipping,
+          lines: mLines,
+        }),
+      });
+
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j?.ok) {
+        alert(j?.message || j?.error || `수기 주문 생성 실패 (HTTP ${res.status})`);
+        return;
+      }
+
+      // 폼 리셋
+      setMNick("");
+      setMPhone("");
+      setMPostal("");
+      setMAddr1("");
+      setMAddr2("");
+      setMShipping("택배");
+      setMLines([]);
+
+      await reload();
+      alert("수기 주문 생성 완료!");
+    } catch (e: any) {
+      alert(e?.message ?? "수기 주문 생성 실패");
+    } finally {
+      setMSubmitting(false);
+    }
+  }
+  // ===== 수기 주문(관리자) 끝 =====
+
   async function apiJson(url: string, init?: RequestInit) {
     const res = await fetch(url, init);
     const json = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
+    // 관리자 API들 응답키가 error/message 혼재할 수 있어 둘 다 처리
+    if (!res.ok) throw new Error(json?.error ?? json?.message ?? `HTTP ${res.status}`);
     return json;
   }
 
@@ -462,7 +576,12 @@ export default function AdminSessionPage({ params }: { params: { sessionId: stri
             onChange={(e) => setNewPrice(Number(e.target.value.replace(/[^0-9]/g, "")) || 0)}
           />
           <div className="flex items-center gap-2">
-            <input className="input" type="file" accept="image/*" onChange={(e) => setNewFile(e.target.files?.[0] ?? null)} />
+            <input
+              className="input"
+              type="file"
+              accept="image/*"
+              onChange={(e) => setNewFile(e.target.files?.[0] ?? null)}
+            />
             {newPreview && (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={newPreview} alt="preview" className="h-10 w-10 rounded-lg object-cover border border-slate-200" />
@@ -476,10 +595,87 @@ export default function AdminSessionPage({ params }: { params: { sessionId: stri
         <div className="text-xs text-slate-500">* 이미지는 선택사항입니다. (없어도 등록 가능)</div>
       </section>
 
+      {/* ===== 수기 주문 추가 ===== */}
+      <section className="card p-4 md:p-6 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="font-semibold">수기 주문 추가 (DM/카톡/전화)</div>
+          <div className="text-sm text-slate-600">
+            합계: <span className="font-semibold">{manualTotal.total_qty}</span>개 /{" "}
+            <span className="font-semibold">{manualTotal.total_amount.toLocaleString("ko-KR")}</span>원
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+          <input className="input" placeholder="닉네임*" value={mNick} onChange={(e) => setMNick(e.target.value)} />
+          <input className="input" placeholder="연락처" value={mPhone} onChange={(e) => setMPhone(e.target.value)} />
+          <div className="md:col-span-2 grid grid-cols-1 gap-2 md:grid-cols-[160px_1fr]">
+            <select className="input" value={mShipping} onChange={(e) => setMShipping(e.target.value as ShippingType)}>
+              <option value="택배">택배</option>
+              <option value="직거래">직거래</option>
+              <option value="기타">기타</option>
+            </select>
+            <div className="text-sm text-slate-600 flex items-center">배송 방식 선택</div>
+          </div>
+          <input className="input" placeholder="우편번호" value={mPostal} onChange={(e) => setMPostal(e.target.value)} />
+          <input className="input" placeholder="주소1" value={mAddr1} onChange={(e) => setMAddr1(e.target.value)} />
+          <input className="input md:col-span-2" placeholder="주소2" value={mAddr2} onChange={(e) => setMAddr2(e.target.value)} />
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-2">
+          <div className="font-semibold">상품/수량</div>
+
+          <div className="grid grid-cols-1 gap-2">
+            {(products ?? [])
+              .filter((p: any) => !p.deleted_at && !p.is_hidden)
+              .map((p: any) => {
+                const current = mLines.find((x) => x.product_id === p.id)?.qty ?? 0;
+                const disabled = !!p.is_soldout;
+
+                return (
+                  <div key={p.id} className="flex items-center gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold truncate">
+                        {p.name} {p.is_soldout ? <span className="badge ml-2">품절</span> : null}
+                      </div>
+                      <div className="text-sm text-slate-600">{Number(p.price ?? 0).toLocaleString("ko-KR")}원</div>
+                    </div>
+
+                    <input
+                      className="input w-[110px]"
+                      type="number"
+                      min={0}
+                      value={current}
+                      disabled={disabled}
+                      onChange={(e) => setLineQty(p.id, Number(e.target.value))}
+                    />
+                  </div>
+                );
+              })}
+          </div>
+
+          <div className="pt-2 flex flex-wrap gap-2 items-center">
+            <button className="btnPrimary" onClick={createManualOrder} disabled={mSubmitting}>
+              {mSubmitting ? "생성 중..." : "수기 주문 생성"}
+            </button>
+            <button className="btn" onClick={() => setMLines([])} disabled={mSubmitting}>
+              수량 초기화
+            </button>
+            <div className="text-xs text-slate-500">
+              * 품절/숨김/삭제 상품은 수기주문에 담을 수 없게 막아두었습니다.
+            </div>
+          </div>
+        </div>
+      </section>
+      {/* ===== 수기 주문 끝 ===== */}
+
       {/* 안내문 */}
       <section className="card p-4 md:p-6 space-y-3">
         <div className="font-semibold">안내문(정산서 오른쪽)</div>
-        <textarea className="input h-[240px] font-mono text-sm leading-6" value={notice} onChange={(e) => setNotice(e.target.value)} />
+        <textarea
+          className="input h-[240px] font-mono text-sm leading-6"
+          value={notice}
+          onChange={(e) => setNotice(e.target.value)}
+        />
         <button className="btnPrimary" onClick={saveNotice}>
           안내문 저장
         </button>
@@ -528,10 +724,16 @@ export default function AdminSessionPage({ params }: { params: { sessionId: stri
             <tbody className="divide-y divide-slate-200">
               {visibleOrders.map((o: any) => {
                 const deleted = !!o.deleted_at;
+                const isManual = !!o.is_manual;
 
                 return (
                   <tr key={o.id} className={deleted ? "opacity-60" : ""}>
-                    <td className="px-3 py-2 font-semibold">{o.nickname}</td>
+                    <td className="px-3 py-2 font-semibold">
+                      <span className="inline-flex items-center gap-2">
+                        {o.nickname}
+                        {isManual ? <span className="badge">수기</span> : null}
+                      </span>
+                    </td>
                     <td className="px-3 py-2">{o.phone ?? "-"}</td>
                     <td className="px-3 py-2">{o.shipping}</td>
                     <td className="px-3 py-2 text-slate-700">
@@ -586,7 +788,7 @@ export default function AdminSessionPage({ params }: { params: { sessionId: stri
                           onClick={async () => {
                             const text = `[정산 안내]\n${o.nickname}님\n정산서: ${location.origin}/receipt/token/${o.edit_token}\n(위 링크에서 JPG 저장 가능)\n\n연락처: ${
                               o.phone ?? "-"
-                            }\n주소: ${(o.postal_code ? `[${o.postal_code}] ` : "") + (o.address1 ?? "") + (o.address2 ? " " + o.address2 : "")}`;
+                            }\n배송: ${o.shipping ?? "-"}\n주소: ${(o.postal_code ? `[${o.postal_code}] ` : "") + (o.address1 ?? "") + (o.address2 ? " " + o.address2 : "")}`;
                             await navigator.clipboard.writeText(text);
                             alert("카톡으로 보낼 문구를 복사했어요. 카카오톡에 붙여넣기 하시면 됩니다.");
                           }}

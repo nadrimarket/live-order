@@ -9,7 +9,7 @@ export async function GET(req: Request) {
   // ✅ 중요: 너 sessions 테이블에 "code 컬럼명이 다름"
   // 그래서 아래 줄에서 'code'를 실제 컬럼명으로 바꿔줘야 함.
   // 예: session_code / public_code / join_code / slug ...
-  const CODE_COL = "code"; // <-- 여기만 너 DB에 맞게 변경
+  const CODE_COL = "id"; // <-- 여기만 너 DB에 맞게 변경
 
   const { data, error } = await supabaseService
     .from("sessions")

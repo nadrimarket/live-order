@@ -549,95 +549,95 @@ export default function AdminSessionPage({ params }: { params: { sessionId: stri
       </thead>
 
       <tbody className="divide-y divide-slate-200">
-              {visibleOrders.map((o: any) => {
-                const deleted = !!o.deleted_at;
-                const isManual = !!o.is_manual;
+        {visibleOrders.map((o: any) => {
+          const deleted = !!o.deleted_at;
 
-                return (
-                  <tr key={o.id} className={deleted ? "opacity-60" : ""}>
-                    <td className="px-3 py-2 font-semibold">
-                      <span className="inline-flex items-center gap-2">
-                        {o.nickname}
-                        {isManual ? <span className="badge">수기</span> : null}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2">{o.phone ?? "-"}</td>
-                    <td className="px-3 py-2">{o.shipping}</td>
-                    <td className="px-3 py-2 text-slate-700">
-                      {(o.postal_code ? `[${o.postal_code}] ` : "") + (o.address1 ?? "") + (o.address2 ? " " + o.address2 : "")}
-                    </td>
+          return (
+            <tr key={o.id} className={deleted ? "opacity-60" : ""}>
+              <td className="px-4 py-3 font-semibold">{o.nickname}</td>
+              <td className="px-4 py-3">{o.phone ?? "-"}</td>
+              <td className="px-4 py-3">{o.shipping ?? "-"}</td>
+              <td className="px-4 py-3 text-slate-700">
+                {(o.postal_code ? `[${o.postal_code}] ` : "") +
+                  (o.address1 ?? "") +
+                  (o.address2 ? " " + o.address2 : "")}
+              </td>
 
-                    <td className="px-3 py-2">
-                      <button className={o.paid_at ? "btnPrimary" : "btn"} onClick={() => togglePaid(o.id)}>
-                        {o.paid_at ? "입금완료" : "미입금"}
-                      </button>
-                    </td>
+              <td className="px-4 py-3">
+                <button className={o.paid_at ? "btnPrimary" : "btn"} onClick={() => togglePaid(o.id)}>
+                  {o.paid_at ? "입금완료" : "미입금"}
+                </button>
+              </td>
 
-                    <td className="px-3 py-2">
-                      <button className={o.shipped_at ? "btnPrimary" : "btn"} onClick={() => toggleShipped(o.id)}>
-                        {o.shipped_at ? "발송완료" : "미발송"}
-                      </button>
-                    </td>
+              <td className="px-4 py-3">
+                <button className={o.shipped_at ? "btnPrimary" : "btn"} onClick={() => toggleShipped(o.id)}>
+                  {o.shipped_at ? "발송완료" : "미발송"}
+                </button>
+              </td>
 
-                    <td className="px-3 py-2">
-                      <div className="flex flex-wrap gap-2">
-                        <a className="btn" href={`/order/edit/${o.edit_token}`}>
-                          수정
-                        </a>
-                        <a className="btnPrimary" href={`/receipt/token/${o.edit_token}`}>
-                          정산서(JPG)
-                        </a>
+              <td className="px-4 py-3">
+                <div className="flex flex-wrap gap-2 justify-end">
+                  <a className="btn" href={`/order/edit/${o.edit_token}`}>
+                    수정
+                  </a>
+                  <a className="btnPrimary" href={`/receipt/token/${o.edit_token}`}>
+                    정산서(JPG)
+                  </a>
 
-                        <button
-                          className="btn"
-                          onClick={async () => {
-                            const ok = confirm(`${o.nickname}님의 주문을 삭제(숨김)할까요?`);
-                            if (!ok) return;
+                  <button
+                    className="btn"
+                    onClick={async () => {
+                      const ok = confirm(`${o.nickname}님의 주문을 삭제(숨김)할까요?`);
+                      if (!ok) return;
 
-                            try {
-                              const j = await apiJson("/api/admin/orders/delete", {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({ orderId: o.id }),
-                              });
-                              if (!j?.ok) throw new Error(j?.error ?? "삭제 실패");
-                              await reload();
-                            } catch (e: any) {
-                              alert(e?.message ?? "삭제 실패");
-                            }
-                          }}
-                        >
-                          주문 삭제
-                        </button>
+                      try {
+                        const j = await apiJson("/api/admin/orders/delete", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ orderId: o.id }),
+                        });
+                        if (!j?.ok) throw new Error(j?.error ?? "삭제 실패");
+                        await reload();
+                      } catch (e: any) {
+                        alert(e?.message ?? "삭제 실패");
+                      }
+                    }}
+                  >
+                    주문 삭제
+                  </button>
 
-                        <button
-                          className="btn"
-                          onClick={async () => {
-                            const text = `[정산 안내]\n${o.nickname}님\n정산서: ${location.origin}/receipt/token/${o.edit_token}\n(위 링크에서 JPG 저장 가능)\n\n연락처: ${
-                              o.phone ?? "-"
-                            }\n배송: ${o.shipping ?? "-"}\n주소: ${(o.postal_code ? `[${o.postal_code}] ` : "") + (o.address1 ?? "") + (o.address2 ? " " + o.address2 : "")}`;
-                            await navigator.clipboard.writeText(text);
-                            alert("카톡으로 보낼 문구를 복사했어요. 카카오톡에 붙여넣기 하시면 됩니다.");
-                          }}
-                        >
-                          카톡문구 복사
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+                  <button
+                    className="btn"
+                    onClick={async () => {
+                      const text = `[정산 안내]\n${o.nickname}님\n정산서: ${location.origin}/receipt/token/${o.edit_token}\n(위 링크에서 JPG 저장 가능)\n\n연락처: ${
+                        o.phone ?? "-"
+                      }\n주소: ${(o.postal_code ? `[${o.postal_code}] ` : "") +
+                        (o.address1 ?? "") +
+                        (o.address2 ? " " + o.address2 : "")}`;
+                      await navigator.clipboard.writeText(text);
+                      alert("카톡으로 보낼 문구를 복사했어요. 카카오톡에 붙여넣기 하시면 됩니다.");
+                    }}
+                  >
+                    카톡문구 복사
+                  </button>
+                </div>
+              </td>
+            </tr>
+          );
+        })}
 
-              {visibleOrders.length === 0 && (
-                <tr>
-                  <td className="px-3 py-3 text-slate-500" colSpan={7}>
-                    주문이 없습니다.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        {visibleOrders.length === 0 && (
+          <tr>
+            <td className="px-4 py-4 text-slate-500" colSpan={7}>
+              주문이 없습니다.
+            </td>
+          </tr>
+        )}
+      </tbody>
+    </table>
+  </div>
+</div>
+
       </section>
     </main>
   );

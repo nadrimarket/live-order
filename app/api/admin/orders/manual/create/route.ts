@@ -110,7 +110,7 @@ export async function POST(req: Request) {
       return a + p.price * l.qty;
     }, 0);
 
-    const order_token = makeOrderToken();
+    const edit_token = makeOrderToken();
 
     // ✅ orders.insert 시 컬럼명이 네 테이블과 100% 일치해야 함
     // - 네 주문 목록에서 쓰는 필드들이: phone/postal_code/address1/address2/shipping/is_manual/order_token
@@ -126,7 +126,7 @@ export async function POST(req: Request) {
         shipping: shipping || null,
 
         is_manual: true,
-        order_token,
+        edit_token,
 
         total_qty,
         total_amount,
@@ -155,7 +155,7 @@ export async function POST(req: Request) {
       return bad(lErr.message, 500);
     }
 
-    return NextResponse.json({ ok: true, order_id: order.id, order_token: order.order_token });
+    return NextResponse.json({ ok: true, order_id: order.id, edit_token: order.order_token });
   } catch (e: any) {
     return NextResponse.json({ ok: false, message: e?.message ?? "unknown error" }, { status: 500 });
   }

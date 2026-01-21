@@ -140,13 +140,13 @@ const itemRows = normalized.map((l) => ({
 }));
 
 
-    const { error: lErr } = await sb.from("order_lines").insert(lineRows);
+const { error: iErr } = await sb.from("order_items").insert(itemRows);
 
-    if (lErr) {
-      // 롤백
-      await sb.from("orders").delete().eq("id", order.id);
-      return bad(lErr.message, 500);
-    }
+if (iErr) {
+  // 롤백
+  await sb.from("orders").delete().eq("id", order.id);
+  return bad(iErr.message, 500);
+}
 
     return NextResponse.json({ ok: true, order_id: order.id, edit_token: order.edit_token });
   } catch (e: any) {

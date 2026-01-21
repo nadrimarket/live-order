@@ -8,6 +8,8 @@ export type Product = {
   image_url: string | null;
   is_active: boolean;
   sort_order: number;
+  is_soldout?: boolean;        // DB에 추가했다면 boolean으로
+  deleted_at?: string | null; 
 };
 
 export type Session = {

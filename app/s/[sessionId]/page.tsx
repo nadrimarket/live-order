@@ -10,6 +10,8 @@ type MyOrderToken = { token: string; createdAt: number; nickname?: string };
 export default function SessionOrderPage({ params }: { params: { sessionId: string } }) {
   const { sessionId } = params;
 
+  console.log("CUSTOMER sessionId param =", sessionId);
+  
   const storageKey = useMemo(() => `liveorder:mytokens:${sessionId}`, [sessionId]);
 
   const loadMyTokens = useCallback((): MyOrderToken[] => {

@@ -213,7 +213,7 @@ export default function SessionOrderPage({ params }: { params: { sessionId: stri
   }
 
   // ✅ 품절 상품은 아예 숨김 (보이지만 비활성 원하면 여기만 바꾸면 됨)
-  const visibleProducts = (products as any[]).filter((p) => !p.is_soldout);
+  const visibleProducts = products as any[];
 
   return (
     <main className="space-y-5">
@@ -284,7 +284,11 @@ export default function SessionOrderPage({ params }: { params: { sessionId: stri
         <ProductGrid
           products={visibleProducts as any}
           qtyById={qtyById}
-          setQty={(id, qty) => setQtyById((prev) => ({ ...prev, [id]: qty }))}
+          setQty={(id, qty) => {
+  const p = (products as any[]).find((x) => x.id === id);
+  if (p?.is_soldout) return; // ✅ 품절이면 담기/수량변경 불가
+  setQtyById((prev) => ({ ...prev, [id]: qty }));
+}}
         />
       </section>
 

@@ -2,21 +2,32 @@ import { NextResponse } from "next/server";
 import { isAdmin } from "@/lib/adminAuth";
 import { supabaseService } from "@/lib/supabase";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export async function GET(req: Request) {
-  if (!isAdmin()) return NextResponse.json({ error: "관리자 권한 필요" }, { status: 401 });
-  const url = new URL(req.url);
-  const sessionId = url.searchParams.get("sessionId");
-  if (!sessionId) return NextResponse.json({ error: "sessionId 필요" }, { status: 400 });
+  if (!isAdmin()) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+
+  const { searchParams } = new URL(req.url);
+  const sessionId = String(searchParams.get("sessionId") ?? "").trim();
+  if (!sessionId) return NextResponse.json({ error: "sessionId required" }, { status: 400 });
+
+  const includeDeleted = String(searchParams.get("includeDeleted") ?? "0") === "1";
 
   const sb = supabaseService();
-  const { data, error } = await sb
-    .from("orders")
-    .select("id,session_id,nickname,shipping,phone,postal_code,address1,address2,edit_token,created_at")
-    .eq("session_id", sessionId)
-    .eq("is_deleted", false)
-    .order("created_at", { ascending: false })
-    .limit(5000);
 
+  let q = sb
+    .from("orders")
+    .select(
+      "id,session_id,nickname,phone,postal_code,address1,address2,shipping,edit_token,paid_at,shipped_at,deleted_at,created_at,is_manual,total_qty,total_amount"
+    )
+    .eq("session_id", sessionId)
+    .order("created_at", { ascending: true });
+
+  if (!includeDeleted) q = q.is("deleted_at", null);
+
+  const { data, error } = await q;
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-  return NextResponse.json({ orders: data ?? [] });
+
+  return NextResponse.json({ ok: true, orders: data ?? [] }, { headers: { "Cache-Control": "no-store" } });
 }

@@ -6,9 +6,8 @@ function bad(message: string, status = 400) {
   return NextResponse.json({ ok: false, message }, { status });
 }
 
-function makeOrderToken() {
-  // URL-safe 토큰 (order_token not-null 해결)
-  // 24 bytes -> 32~ chars 정도
+function makeEditToken() {
+  // URL-safe 토큰 (edit_token 용)
   return crypto.randomBytes(24).toString("base64url");
 }
 
@@ -19,7 +18,7 @@ function supabaseService() {
   const key =
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
     process.env.SUPABASE_SERVICE_KEY ||
-    process.env.SUPABASE_SERVICE_ROLE; // 혹시 다른 이름으로 쓰는 경우 대비
+    process.env.SUPABASE_SERVICE_ROLE;
 
   if (!url) throw new Error("NEXT_PUBLIC_SUPABASE_URL is missing");
   if (!key) throw new Error("SUPABASE_SERVICE_ROLE_KEY (service role) is missing");
@@ -29,11 +28,10 @@ function supabaseService() {
   });
 }
 
-// ✅ 프로젝트에 이미 관리자 인증 로직이 있으면 여기만 네 방식으로 바꿔도 됨.
+// ✅ 프로젝트에 이미 관리자 인증 로직이 있으면 여기만 네 방식으로 교체 가능
 function requireAdmin(req: Request) {
-  // 1) 환경변수 ADMIN_PIN을 쓰는 단순 방식
   const expected = process.env.ADMIN_PIN || "";
-  if (!expected) return true; // ADMIN_PIN 안 쓰면 일단 통과(원하면 false로 바꿔도 됨)
+  if (!expected) return true; // ADMIN_PIN 미사용이면 통과 (원하면 false로 바꿔도 됨)
 
   const pin = req.headers.get("x-admin-pin") ?? "";
   return pin === expected;
@@ -52,7 +50,6 @@ export async function POST(req: Request) {
     const postal_code = String(body?.postal_code ?? "").trim();
     const address1 = String(body?.address1 ?? "").trim();
     const address2 = String(body?.address2 ?? "").trim();
-    const shipping = String(body?.shipping ?? "택배").trim(); // 기존 orders 컬럼과 맞춰야 함
 
     const lines: LineIn[] = Array.isArray(body?.lines) ? body.lines : [];
 
@@ -71,7 +68,7 @@ export async function POST(req: Request) {
 
     const sb = supabaseService();
 
-    // 세션 체크(삭제 세션 차단)
+    // 1) 세션 체크(삭제 세션 차단)
     const { data: sess, error: sErr } = await sb
       .from("sessions")
       .select("id, deleted_at, is_closed")
@@ -82,12 +79,12 @@ export async function POST(req: Request) {
     if (!sess) return bad("session not found", 404);
     if (sess.deleted_at) return bad("session is deleted", 403);
 
-    // 상품 체크(세션 일치 + 품절/숨김/삭제 차단)
+    // 2) 상품 체크(세션 일치 + 품절/삭제 차단)
     const productIds = Array.from(new Set(normalized.map((l) => l.product_id)));
 
     const { data: products, error: pErr } = await sb
       .from("products")
-      .select("id, session_id, price, is_soldout, deleted_at")
+      .select("id, session_id, is_soldout, deleted_at")
       .in("id", productIds);
 
     if (pErr) return bad(pErr.message, 500);
@@ -101,55 +98,48 @@ export async function POST(req: Request) {
       if (p.session_id !== session_id) return bad("product session mismatch", 403);
       if (p.deleted_at) return bad("deleted product included", 400);
       if (p.is_soldout) return bad("sold out product included", 400);
-      if (typeof p.price !== "number") return bad("invalid product price", 500);
     }
 
-    const total_qty = normalized.reduce((a, l) => a + l.qty, 0);
-    const total_amount = normalized.reduce((a, l) => {
-      const p = map.get(l.product_id);
-      return a + p.price * l.qty;
-    }, 0);
+    // 3) orders 생성 (⚠️ shipping은 CHECK 제약 때문에 아예 넣지 않음)
+    const edit_token = makeEditToken();
 
-    const edit_token = makeOrderToken();
-
-    // ✅ orders.insert 시 컬럼명이 네 테이블과 100% 일치해야 함
-    // - 네 주문 목록에서 쓰는 필드들이: phone/postal_code/address1/address2/shipping/is_manual/order_token
-const { data: order, error: oErr } = await sb
-  .from("orders")
-  .insert({
-    session_id,
-    nickname,
-    phone: phone || null,
-    postal_code: postal_code || null,
-    address1: address1 || null,
-    address2: address2 || null,
-
-    is_manual: true,
-    edit_token,
-  })
-  .select("id, edit_token")
-  .single();
-
+    const { data: order, error: oErr } = await sb
+      .from("orders")
+      .insert({
+        session_id,
+        nickname,
+        phone: phone || null,
+        postal_code: postal_code || null,
+        address1: address1 || null,
+        address2: address2 || null,
+        is_manual: true,
+        edit_token,
+      })
+      .select("id, edit_token")
+      .single();
 
     if (oErr) return bad(oErr.message, 500);
 
-const itemRows = normalized.map((l) => ({
-  order_id: order.id,
-  product_id: l.product_id,
-  qty: l.qty,
-}));
+    // 4) order_items 생성 (스키마 확정: id/order_id/product_id/qty 만 존재)
+    const itemRows = normalized.map((l) => ({
+      order_id: order.id,
+      product_id: l.product_id,
+      qty: l.qty,
+    }));
 
+    const { error: iErr } = await sb.from("order_items").insert(itemRows);
 
-const { error: iErr } = await sb.from("order_items").insert(itemRows);
-
-if (iErr) {
-  // 롤백
-  await sb.from("orders").delete().eq("id", order.id);
-  return bad(iErr.message, 500);
-}
+    if (iErr) {
+      // 롤백
+      await sb.from("orders").delete().eq("id", order.id);
+      return bad(iErr.message, 500);
+    }
 
     return NextResponse.json({ ok: true, order_id: order.id, edit_token: order.edit_token });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, message: e?.message ?? "unknown error" }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, message: e?.message ?? "unknown error" },
+      { status: 500 }
+    );
   }
 }

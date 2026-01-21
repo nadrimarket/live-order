@@ -533,21 +533,22 @@ export default function AdminSessionPage({ params }: { params: { sessionId: stri
           </button>
         </div>
 
-        <div className="overflow-auto rounded-xl border border-slate-200 bg-white">
-          <table className="min-w-[1080px] w-full text-sm">
-            <thead className="bg-slate-50 text-slate-700">
-              <tr>
-                <th className="px-3 py-2 text-left">닉네임</th>
-                <th className="px-3 py-2 text-left">연락처</th>
-                <th className="px-3 py-2 text-left">배송</th>
-                <th className="px-3 py-2 text-left">주소</th>
-                <th className="px-3 py-2 text-left">입금</th>
-                <th className="px-3 py-2 text-left">발송</th>
-                <th className="px-3 py-2 text-left">작업</th>
-              </tr>
-            </thead>
+<div className="rounded-xl border border-slate-200 bg-white overflow-x-auto">
+  <div className="min-w-[1120px] pr-6">
+    <table className="w-full text-sm">
+      <thead className="bg-slate-50 text-slate-700">
+        <tr>
+          <th className="px-4 py-3 text-left">닉네임</th>
+          <th className="px-4 py-3 text-left">연락처</th>
+          <th className="px-4 py-3 text-left">배송</th>
+          <th className="px-4 py-3 text-left">주소</th>
+          <th className="px-4 py-3 text-left">입금</th>
+          <th className="px-4 py-3 text-left">발송</th>
+          <th className="px-4 py-3 text-right">작업</th>
+        </tr>
+      </thead>
 
-            <tbody className="divide-y divide-slate-200">
+      <tbody className="divide-y divide-slate-200">
               {visibleOrders.map((o: any) => {
                 const deleted = !!o.deleted_at;
                 const isManual = !!o.is_manual;

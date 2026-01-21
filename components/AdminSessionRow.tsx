@@ -77,7 +77,7 @@ export default function AdminSessionRow({ s }: { s: Row }) {
       <div className="flex items-center gap-2">
         {s.is_closed ? <span className="badge">마감</span> : <span className="badge">LIVE</span>}
         <a className="btn" href={`/admin/session/${s.id}`}>관리</a>
-        <a className="btn" href={`/admin/s/${s.id}/products`}>물품</a>
+        <a className="btn" href={`/admin/s/${s.id}/product`}>물품</a>
         <a className="btnPrimary" href={`/admin/session/${s.id}/summary`}>판매현황</a>
 
         {!deleted ? (

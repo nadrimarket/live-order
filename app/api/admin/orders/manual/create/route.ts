@@ -153,7 +153,7 @@ const { data: order, error: oErr } = await sb
       return bad(lErr.message, 500);
     }
 
-    return NextResponse.json({ ok: true, order_id: order.id, edit_token: order.order_token });
+    return NextResponse.json({ ok: true, order_id: order.id, edit_token: order.edit_token });
   } catch (e: any) {
     return NextResponse.json({ ok: false, message: e?.message ?? "unknown error" }, { status: 500 });
   }

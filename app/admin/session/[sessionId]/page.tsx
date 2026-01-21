@@ -626,7 +626,7 @@ export default function AdminSessionPage({ params }: { params: { sessionId: stri
 
           <div className="grid grid-cols-1 gap-2">
             {(products ?? [])
-              .filter((p: any) => !p.deleted_at && !p.is_hidden)
+              .filter((p: any) => !p.deleted_at)
               .map((p: any) => {
                 const current = mLines.find((x) => x.product_id === p.id)?.qty ?? 0;
                 const disabled = !!p.is_soldout;

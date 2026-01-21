@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isAdmin } from "@/lib/adminAuth";
-import { supabaseAnon } from "@/lib/supabase";
+import { supabaseService } from "@/lib/supabase";
 
 export async function POST(req: Request) {
   if (!isAdmin()) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
@@ -14,9 +14,9 @@ export async function POST(req: Request) {
   if (!name) return NextResponse.json({ error: "name required" }, { status: 400 });
   if (!Number.isFinite(price) || price <= 0) return NextResponse.json({ error: "invalid price" }, { status: 400 });
 
-  const sb = supabaseAnon();
+  const sb = supabaseService();
 
-  // sort_order: 같은 세션 내에서 마지막 값 + 1
+  // 같은 세션 내 마지막 sort_order + 1
   const { data: lastRow, error: e1 } = await sb
     .from("products")
     .select("sort_order")
@@ -37,12 +37,13 @@ export async function POST(req: Request) {
       price,
       image_url: null,
       sort_order: nextSort,
-      // is_active 기본 true, is_soldout 있으면 기본 false (DB default가 있으면 자동)
+      // is_active default true (있다면), is_soldout default false (있다면)
     })
-    .select("*")
-    .single();
+    .select("id,session_id,name,price,image_url,sort_order,is_soldout,created_at")
+    .maybeSingle();
 
   if (e2) return NextResponse.json({ error: e2.message }, { status: 400 });
+  if (!item) return NextResponse.json({ error: "insert failed" }, { status: 400 });
 
   return NextResponse.json({ ok: true, item });
 }

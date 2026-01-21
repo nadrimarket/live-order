@@ -19,7 +19,7 @@ export async function GET(req: Request) {
   let q = sb
     .from("orders")
     .select(
-      "id,session_id,nickname,phone,postal_code,address1,address2,shipping,edit_token,paid_at,shipped_at,deleted_at,created_at,is_manual"
+      "id,session_id,nickname,phone,postal_code,address1,address2,shipping,edit_token,paid_at,shipped_at,deleted_at,created_at"
     )
     .eq("session_id", sessionId)
     .order("created_at", { ascending: true });
@@ -29,5 +29,8 @@ export async function GET(req: Request) {
   const { data, error } = await q;
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
-  return NextResponse.json({ ok: true, orders: data ?? [] }, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json(
+    { ok: true, orders: data ?? [] },
+    { headers: { "Cache-Control": "no-store" } }
+  );
 }

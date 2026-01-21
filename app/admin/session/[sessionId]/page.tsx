@@ -594,7 +594,7 @@ export default function AdminSessionPage({ params }: { params: { sessionId: stri
                             if (!ok) return;
 
                             try {
-                              const j = await apiJson("/api/admin/order/delete", {
+                              const j = await apiJson("/api/admin/orders/delete", {
                                 method: "POST",
                                 headers: { "Content-Type": "application/json" },
                                 body: JSON.stringify({ orderId: o.id }),

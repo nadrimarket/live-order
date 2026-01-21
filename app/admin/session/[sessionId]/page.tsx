@@ -283,7 +283,7 @@ export default function AdminSessionPage({ params }: { params: { sessionId: stri
   // ✅ 주문: 입금/발송 토글
   async function togglePaid(orderId: string) {
     try {
-      await apiJson("/api/admin/order/toggle-paid", {
+      await apiJson("/api/admin/orders/toggle-paid", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ orderId }),
@@ -296,7 +296,7 @@ export default function AdminSessionPage({ params }: { params: { sessionId: stri
 
   async function toggleShipped(orderId: string) {
     try {
-      await apiJson("/api/admin/order/toggle-shipped", {
+      await apiJson("/api/admin/orders/toggle-shipped", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ orderId }),

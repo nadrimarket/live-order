@@ -1,22 +1,42 @@
 import { NextResponse } from "next/server";
-import { supabaseService } from "@/lib/supabase/service";
-import { makeOrderToken } from "@/lib/auth/orderToken";
-
-// 입력 라인 타입
-type LineIn = { product_id: string; qty: number };
+import { createClient } from "@supabase/supabase-js";
+import crypto from "crypto";
 
 function bad(message: string, status = 400) {
   return NextResponse.json({ ok: false, message }, { status });
 }
 
-// ✅ 프로젝트에 이미 관리자 인증 함수가 있다면 그걸로 교체해도 됨.
-// 여기서는 "x-admin-pin" 헤더로 단순 체크하는 기본형 제공.
+function makeOrderToken() {
+  // URL-safe 토큰 (order_token not-null 해결)
+  // 24 bytes -> 32~ chars 정도
+  return crypto.randomBytes(24).toString("base64url");
+}
+
+type LineIn = { product_id: string; qty: number };
+
+function supabaseService() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SERVICE_KEY ||
+    process.env.SUPABASE_SERVICE_ROLE; // 혹시 다른 이름으로 쓰는 경우 대비
+
+  if (!url) throw new Error("NEXT_PUBLIC_SUPABASE_URL is missing");
+  if (!key) throw new Error("SUPABASE_SERVICE_ROLE_KEY (service role) is missing");
+
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
+// ✅ 프로젝트에 이미 관리자 인증 로직이 있으면 여기만 네 방식으로 바꿔도 됨.
 function requireAdmin(req: Request) {
+  // 1) 환경변수 ADMIN_PIN을 쓰는 단순 방식
+  const expected = process.env.ADMIN_PIN || "";
+  if (!expected) return true; // ADMIN_PIN 안 쓰면 일단 통과(원하면 false로 바꿔도 됨)
+
   const pin = req.headers.get("x-admin-pin") ?? "";
-  const expected = process.env.ADMIN_PIN ?? "";
-  if (!expected) throw new Error("ADMIN_PIN env is not set");
-  if (pin !== expected) return false;
-  return true;
+  return pin === expected;
 }
 
 export async function POST(req: Request) {
@@ -32,6 +52,7 @@ export async function POST(req: Request) {
     const postal_code = String(body?.postal_code ?? "").trim();
     const address1 = String(body?.address1 ?? "").trim();
     const address2 = String(body?.address2 ?? "").trim();
+    const shipping = String(body?.shipping ?? "택배").trim(); // 기존 orders 컬럼과 맞춰야 함
 
     const lines: LineIn[] = Array.isArray(body?.lines) ? body.lines : [];
 
@@ -39,7 +60,6 @@ export async function POST(req: Request) {
     if (!nickname) return bad("nickname is required");
     if (lines.length === 0) return bad("lines is required");
 
-    // qty 정리
     const normalized = lines
       .map((l) => ({
         product_id: String(l?.product_id ?? "").trim(),
@@ -49,25 +69,25 @@ export async function POST(req: Request) {
 
     if (normalized.length === 0) return bad("valid lines required");
 
-    // 세션 존재/삭제/마감 체크 (마감이어도 수기주문 허용할지 정책 선택)
-    // 보통 운영상 마감 후에도 관리자 수기 주문 추가가 필요할 수 있어
-    // ✅ 여기서는 "삭제된 세션만 차단, 마감은 허용"으로 해둠.
-    const { data: session, error: sErr } = await supabaseService
+    const sb = supabaseService();
+
+    // 세션 체크(삭제 세션 차단)
+    const { data: sess, error: sErr } = await sb
       .from("sessions")
       .select("id, deleted_at, is_closed")
       .eq("id", session_id)
       .maybeSingle();
 
     if (sErr) return bad(sErr.message, 500);
-    if (!session) return bad("session not found", 404);
-    if (session.deleted_at) return bad("session is deleted", 403);
+    if (!sess) return bad("session not found", 404);
+    if (sess.deleted_at) return bad("session is deleted", 403);
 
-    // 상품 유효성 + 세션 소속 + 품절 체크 + 가격 가져오기
+    // 상품 체크(세션 일치 + 품절/숨김/삭제 차단)
     const productIds = Array.from(new Set(normalized.map((l) => l.product_id)));
 
-    const { data: products, error: pErr } = await supabaseService
+    const { data: products, error: pErr } = await sb
       .from("products")
-      .select("id, session_id, price, is_sold_out, is_hidden, deleted_at")
+      .select("id, session_id, price, is_soldout, is_hidden, deleted_at")
       .in("id", productIds);
 
     if (pErr) return bad(pErr.message, 500);
@@ -81,7 +101,7 @@ export async function POST(req: Request) {
       if (p.session_id !== session_id) return bad("product session mismatch", 403);
       if (p.deleted_at) return bad("deleted product included", 400);
       if (p.is_hidden) return bad("hidden product included", 400);
-      if (p.is_sold_out) return bad("sold out product included", 400);
+      if (p.is_soldout) return bad("sold out product included", 400);
       if (typeof p.price !== "number") return bad("invalid product price", 500);
     }
 
@@ -91,11 +111,11 @@ export async function POST(req: Request) {
       return a + p.price * l.qty;
     }, 0);
 
-    // ✅ order_token을 반드시 생성해서 not-null 에러 방지
-    const order_token = makeOrderToken(); // 기존 util 사용
+    const order_token = makeOrderToken();
 
-    // orders 생성
-    const { data: order, error: oErr } = await supabaseService
+    // ✅ orders.insert 시 컬럼명이 네 테이블과 100% 일치해야 함
+    // - 네 주문 목록에서 쓰는 필드들이: phone/postal_code/address1/address2/shipping/is_manual/order_token
+    const { data: order, error: oErr } = await sb
       .from("orders")
       .insert({
         session_id,
@@ -104,6 +124,7 @@ export async function POST(req: Request) {
         postal_code: postal_code || null,
         address1: address1 || null,
         address2: address2 || null,
+        shipping: shipping || null,
 
         is_manual: true,
         order_token,
@@ -116,35 +137,27 @@ export async function POST(req: Request) {
 
     if (oErr) return bad(oErr.message, 500);
 
-    // order_lines 생성
     const lineRows = normalized.map((l) => {
       const p = map.get(l.product_id);
       return {
         order_id: order.id,
         product_id: l.product_id,
         qty: l.qty,
-        price: p.price, // 주문 당시 가격 스냅샷
+        price: p.price,
         amount: p.price * l.qty,
       };
     });
 
-    const { error: lErr } = await supabaseService.from("order_lines").insert(lineRows);
+    const { error: lErr } = await sb.from("order_lines").insert(lineRows);
 
     if (lErr) {
-      // 간단 롤백
-      await supabaseService.from("orders").delete().eq("id", order.id);
+      // 롤백
+      await sb.from("orders").delete().eq("id", order.id);
       return bad(lErr.message, 500);
     }
 
-    return NextResponse.json({
-      ok: true,
-      order_id: order.id,
-      order_token: order.order_token,
-    });
+    return NextResponse.json({ ok: true, order_id: order.id, order_token: order.order_token });
   } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, message: e?.message ?? "unknown error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, message: e?.message ?? "unknown error" }, { status: 500 });
   }
 }

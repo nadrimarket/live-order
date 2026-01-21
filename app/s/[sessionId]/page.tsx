@@ -246,7 +246,8 @@ export default function SessionOrderPage({ params }: { params: { sessionId: stri
       <section>
         <h2 className="font-bold mb-2">오늘 판매 물품</h2>
         <ProductGrid
-          products={products.filter((p) => p.is_active && !p.is_soldout)}
+        <ProductGrid
+          products={products.filter((p: any) => !p.is_soldout)}
           qtyById={qtyById}
           setQty={(id, qty) => setQtyById((prev) => ({ ...prev, [id]: qty }))}
         />

@@ -87,7 +87,7 @@ export async function POST(req: Request) {
 
     const { data: products, error: pErr } = await sb
       .from("products")
-      .select("id, session_id, price, is_soldout, is_hidden, deleted_at")
+      .select("id, session_id, price, is_soldout, deleted_at")
       .in("id", productIds);
 
     if (pErr) return bad(pErr.message, 500);
@@ -100,7 +100,6 @@ export async function POST(req: Request) {
       if (!p) return bad(`product not found: ${l.product_id}`, 404);
       if (p.session_id !== session_id) return bad("product session mismatch", 403);
       if (p.deleted_at) return bad("deleted product included", 400);
-      if (p.is_hidden) return bad("hidden product included", 400);
       if (p.is_soldout) return bad("sold out product included", 400);
       if (typeof p.price !== "number") return bad("invalid product price", 500);
     }

@@ -26,7 +26,10 @@ export default function AdminSessionPage({ params }: { params: { sessionId: stri
   const [newFile, setNewFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const newPreview = useMemo(() => (newFile ? URL.createObjectURL(newFile) : null), [newFile]);
-
+  const [onlyUnpaid, setOnlyUnpaid] = useState(false);
+  const [onlyUnshipped, setOnlyUnshipped] = useState(false);
+  const [includeDeleted, setIncludeDeleted] = useState(false);
+  
   // 상품 인라인 수정
   const [editingId, setEditingId] = useState<string | null>(null);
   const [edit, setEdit] = useState<EditForm>({

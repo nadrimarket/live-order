@@ -11,13 +11,27 @@ export async function POST(req: Request) {
 
   const sb = supabaseAnon();
 
-  const { data: cur, error: e1 } = await sb.from("products").select("id,is_soldout").eq("id", id).single();
+  // ✅ single() 대신 maybeSingle()
+  const { data: cur, error: e1 } = await sb
+    .from("products")
+    .select("id,is_soldout")
+    .eq("id", id)
+    .maybeSingle();
+
   if (e1) return NextResponse.json({ error: e1.message }, { status: 400 });
+  if (!cur) return NextResponse.json({ error: "product not found" }, { status: 404 });
 
-  const next = !Boolean(cur?.is_soldout);
+  const next = !Boolean((cur as any).is_soldout);
 
-  const { data, error } = await sb.from("products").update({ is_soldout: next }).eq("id", id).select("*").single();
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  const { data: updated, error: e2 } = await sb
+    .from("products")
+    .update({ is_soldout: next })
+    .eq("id", id)
+    .select("*")
+    .maybeSingle();
 
-  return NextResponse.json({ item: data });
+  if (e2) return NextResponse.json({ error: e2.message }, { status: 400 });
+  if (!updated) return NextResponse.json({ error: "update failed" }, { status: 400 });
+
+  return NextResponse.json({ ok: true, item: updated });
 }

@@ -123,7 +123,6 @@ const { data: order, error: oErr } = await sb
     postal_code: postal_code || null,
     address1: address1 || null,
     address2: address2 || null,
-    shipping: shipping || null,
 
     is_manual: true,
     edit_token,

@@ -439,20 +439,27 @@ export default function AdminSessionPage({ params }: { params: { sessionId: stri
             세션ID: <span className="font-mono">{session.id}</span>
           </div>
         </div>
-        <div className="flex gap-2">
-          <a className="btn" href={`/s/${sessionId}`}>
-            고객 페이지
-          </a>
-          <a className="btn" href="/admin">
-            세션 목록
-          </a>
-          <a className="btnPrimary" href={`/admin/session/${sessionId}/summary`}>
-            판매현황
-          </a>
-          <button className="btn" onClick={onToggleDeleteRestore}>
-            {isDeleted ? "세션 복구" : "세션 삭제"}
-          </button>
-        </div>
+<div className="flex gap-2">
+  <a className="btn" href={`/s/${sessionId}`}>
+    고객 페이지
+  </a>
+  <a className="btn" href="/admin">
+    세션 목록
+  </a>
+
+  {/* ✅ 여기 추가 */}
+  <a className="btnPrimary" href={`/admin/session/${sessionId}/manual`}>
+    수기 주문 추가
+  </a>
+
+  <a className="btnPrimary" href={`/admin/session/${sessionId}/summary`}>
+    판매현황
+  </a>
+  <button className="btn" onClick={onToggleDeleteRestore}>
+    {isDeleted ? "세션 복구" : "세션 삭제"}
+  </button>
+</div>
+
       </header>
 
       {msg && <div className="card p-4 text-sm">{msg}</div>}

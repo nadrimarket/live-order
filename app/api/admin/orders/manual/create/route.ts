@@ -114,25 +114,23 @@ export async function POST(req: Request) {
 
     // ✅ orders.insert 시 컬럼명이 네 테이블과 100% 일치해야 함
     // - 네 주문 목록에서 쓰는 필드들이: phone/postal_code/address1/address2/shipping/is_manual/order_token
-    const { data: order, error: oErr } = await sb
-      .from("orders")
-      .insert({
-        session_id,
-        nickname,
-        phone: phone || null,
-        postal_code: postal_code || null,
-        address1: address1 || null,
-        address2: address2 || null,
-        shipping: shipping || null,
+const { data: order, error: oErr } = await sb
+  .from("orders")
+  .insert({
+    session_id,
+    nickname,
+    phone: phone || null,
+    postal_code: postal_code || null,
+    address1: address1 || null,
+    address2: address2 || null,
+    shipping: shipping || null,
 
-        is_manual: true,
-        edit_token,
+    is_manual: true,
+    edit_token,
+  })
+  .select("id, edit_token")
+  .single();
 
-        total_qty,
-        total_amount,
-      })
-      .select("id, order_token")
-      .single();
 
     if (oErr) return bad(oErr.message, 500);
 

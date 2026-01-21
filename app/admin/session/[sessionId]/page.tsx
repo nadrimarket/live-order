@@ -533,109 +533,117 @@ export default function AdminSessionPage({ params }: { params: { sessionId: stri
           </button>
         </div>
 
-<div className="rounded-xl border border-slate-200 bg-white overflow-x-auto">
-  <div className="min-w-[1120px] pr-6">
-    <table className="w-full text-sm">
-      <thead className="bg-slate-50 text-slate-700">
-        <tr>
-          <th className="px-4 py-3 text-left">닉네임</th>
-          <th className="px-4 py-3 text-left">연락처</th>
-          <th className="px-4 py-3 text-left">배송</th>
-          <th className="px-4 py-3 text-left">주소</th>
-          <th className="px-4 py-3 text-left">입금</th>
-          <th className="px-4 py-3 text-left">발송</th>
-          <th className="px-4 py-3 text-right">작업</th>
-        </tr>
-      </thead>
+<div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+  <table className="w-full text-sm table-fixed">
+    <thead className="bg-slate-50 text-slate-700">
+      <tr>
+        <th className="px-3 py-2 text-left w-[90px]">닉네임</th>
+        <th className="px-3 py-2 text-left w-[110px]">연락처</th>
+        <th className="px-3 py-2 text-left w-[60px]">배송</th>
+        <th className="px-3 py-2 text-left">주소</th>
+        <th className="px-3 py-2 text-left w-[86px]">입금</th>
+        <th className="px-3 py-2 text-left w-[86px]">발송</th>
+        <th className="px-3 py-2 text-right w-[240px]">작업</th>
+      </tr>
+    </thead>
 
-      <tbody className="divide-y divide-slate-200">
-        {visibleOrders.map((o: any) => {
-          const deleted = !!o.deleted_at;
+    <tbody className="divide-y divide-slate-200">
+      {visibleOrders.map((o: any) => {
+        const deleted = !!o.deleted_at;
+        const addr = (o.address1 ?? "") + (o.address2 ? " " + o.address2 : "");
+        const postal = o.postal_code ? `[${o.postal_code}]` : "";
 
-          return (
-            <tr key={o.id} className={deleted ? "opacity-60" : ""}>
-              <td className="px-4 py-3 font-semibold">{o.nickname}</td>
-              <td className="px-4 py-3">{o.phone ?? "-"}</td>
-              <td className="px-4 py-3">{o.shipping ?? "-"}</td>
-              <td className="px-4 py-3 text-slate-700">
-                {(o.postal_code ? `[${o.postal_code}] ` : "") +
-                  (o.address1 ?? "") +
-                  (o.address2 ? " " + o.address2 : "")}
-              </td>
+        return (
+          <tr key={o.id} className={deleted ? "opacity-60" : ""}>
+            <td className="px-3 py-2 font-semibold truncate">{o.nickname}</td>
+            <td className="px-3 py-2 truncate">{o.phone ?? "-"}</td>
+            <td className="px-3 py-2 truncate">{o.shipping ?? "-"}</td>
 
-              <td className="px-4 py-3">
-                <button className={o.paid_at ? "btnPrimary" : "btn"} onClick={() => togglePaid(o.id)}>
-                  {o.paid_at ? "입금완료" : "미입금"}
+            {/* ✅ 주소: 2줄까지만 + 줄바꿈 */}
+            <td className="px-3 py-2 text-slate-700">
+              <div className="text-[11px] text-slate-500 truncate">{postal || ""}</div>
+              <div className="text-sm break-words leading-snug line-clamp-2">{addr || "-"}</div>
+            </td>
+
+            <td className="px-3 py-2">
+              <button
+                className={(o.paid_at ? "btnPrimary" : "btn") + " h-8 px-3 text-xs rounded-full"}
+                onClick={() => togglePaid(o.id)}
+              >
+                {o.paid_at ? "입금완료" : "미입금"}
+              </button>
+            </td>
+
+            <td className="px-3 py-2">
+              <button
+                className={(o.shipped_at ? "btnPrimary" : "btn") + " h-8 px-3 text-xs rounded-full"}
+                onClick={() => toggleShipped(o.id)}
+              >
+                {o.shipped_at ? "발송완료" : "미발송"}
+              </button>
+            </td>
+
+            <td className="px-3 py-2">
+              <div className="flex flex-wrap gap-1 justify-end">
+                <a className="btn h-8 px-3 text-xs rounded-full" href={`/order/edit/${o.edit_token}`}>
+                  수정
+                </a>
+                <a className="btnPrimary h-8 px-3 text-xs rounded-full" href={`/receipt/token/${o.edit_token}`}>
+                  정산서
+                </a>
+
+                {/* ✅ 삭제: 기존 로직 연결 */}
+                <button
+                  className="btn h-8 px-3 text-xs rounded-full"
+                  onClick={async () => {
+                    const ok = confirm(`${o.nickname}님의 주문을 삭제(숨김)할까요?`);
+                    if (!ok) return;
+
+                    try {
+                      const j = await apiJson("/api/admin/orders/delete", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ orderId: o.id }),
+                      });
+                      if (!j?.ok) throw new Error(j?.error ?? "삭제 실패");
+                      await reload();
+                    } catch (e: any) {
+                      alert(e?.message ?? "삭제 실패");
+                    }
+                  }}
+                >
+                  삭제
                 </button>
-              </td>
 
-              <td className="px-4 py-3">
-                <button className={o.shipped_at ? "btnPrimary" : "btn"} onClick={() => toggleShipped(o.id)}>
-                  {o.shipped_at ? "발송완료" : "미발송"}
+                {/* ✅ 카톡: 기존 로직 연결 */}
+                <button
+                  className="btn h-8 px-3 text-xs rounded-full"
+                  onClick={async () => {
+                    const text = `[정산 안내]\n${o.nickname}님\n정산서: ${location.origin}/receipt/token/${o.edit_token}\n(위 링크에서 JPG 저장 가능)\n\n연락처: ${
+                      o.phone ?? "-"
+                    }\n배송: ${o.shipping ?? "-"}\n주소: ${postal ? postal + " " : ""}${addr}`;
+                    await navigator.clipboard.writeText(text);
+                    alert("카톡으로 보낼 문구를 복사했어요. 카카오톡에 붙여넣기 하시면 됩니다.");
+                  }}
+                >
+                  카톡
                 </button>
-              </td>
-
-              <td className="px-4 py-3">
-                <div className="flex flex-wrap gap-2 justify-end">
-                  <a className="btn" href={`/order/edit/${o.edit_token}`}>
-                    수정
-                  </a>
-                  <a className="btnPrimary" href={`/receipt/token/${o.edit_token}`}>
-                    정산서(JPG)
-                  </a>
-
-                  <button
-                    className="btn"
-                    onClick={async () => {
-                      const ok = confirm(`${o.nickname}님의 주문을 삭제(숨김)할까요?`);
-                      if (!ok) return;
-
-                      try {
-                        const j = await apiJson("/api/admin/orders/delete", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ orderId: o.id }),
-                        });
-                        if (!j?.ok) throw new Error(j?.error ?? "삭제 실패");
-                        await reload();
-                      } catch (e: any) {
-                        alert(e?.message ?? "삭제 실패");
-                      }
-                    }}
-                  >
-                    주문 삭제
-                  </button>
-
-                  <button
-                    className="btn"
-                    onClick={async () => {
-                      const text = `[정산 안내]\n${o.nickname}님\n정산서: ${location.origin}/receipt/token/${o.edit_token}\n(위 링크에서 JPG 저장 가능)\n\n연락처: ${
-                        o.phone ?? "-"
-                      }\n주소: ${(o.postal_code ? `[${o.postal_code}] ` : "") +
-                        (o.address1 ?? "") +
-                        (o.address2 ? " " + o.address2 : "")}`;
-                      await navigator.clipboard.writeText(text);
-                      alert("카톡으로 보낼 문구를 복사했어요. 카카오톡에 붙여넣기 하시면 됩니다.");
-                    }}
-                  >
-                    카톡문구 복사
-                  </button>
-                </div>
-              </td>
-            </tr>
-          );
-        })}
-
-        {visibleOrders.length === 0 && (
-          <tr>
-            <td className="px-4 py-4 text-slate-500" colSpan={7}>
-              주문이 없습니다.
+              </div>
             </td>
           </tr>
-        )}
-      </tbody>
-    </table>
-  </div>
+        );
+      })}
+
+      {visibleOrders.length === 0 && (
+        <tr>
+          <td className="px-3 py-3 text-slate-500" colSpan={7}>
+            주문이 없습니다.
+          </td>
+        </tr>
+      )}
+    </tbody>
+  </table>
+</div>
 </div>
 
       </section>

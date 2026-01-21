@@ -641,9 +641,6 @@ export default function AdminSessionPage({ params }: { params: { sessionId: stri
     </tbody>
   </table>
 </div>
-
-</div>
-
       </section>
     </main>
   );

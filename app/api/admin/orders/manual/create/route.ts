@@ -133,16 +133,12 @@ const { data: order, error: oErr } = await sb
 
     if (oErr) return bad(oErr.message, 500);
 
-    const lineRows = normalized.map((l) => {
-      const p = map.get(l.product_id);
-      return {
-        order_id: order.id,
-        product_id: l.product_id,
-        qty: l.qty,
-        price: p.price,
-        amount: p.price * l.qty,
-      };
-    });
+const itemRows = normalized.map((l) => ({
+  order_id: order.id,
+  product_id: l.product_id,
+  qty: l.qty,
+}));
+
 
     const { error: lErr } = await sb.from("order_lines").insert(lineRows);
 

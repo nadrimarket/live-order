@@ -8,11 +8,16 @@ import { ShippingType, Product, Session } from "@/lib/types";
 type MyOrderToken = { token: string; createdAt: number; nickname?: string };
 
 export default function SessionOrderPage({ params }: { params: { sessionId: string } }) {
-  const { sessionId } = params;
+  // params.sessionId 는 이제 "UUID 또는 짧은 코드" 둘 다 올 수 있음
+  const sessionKey = params.sessionId;
 
-  console.log("CUSTOMER sessionId param =", sessionId);
-  
-  const storageKey = useMemo(() => `liveorder:mytokens:${sessionId}`, [sessionId]);
+  console.log("CUSTOMER sessionKey param =", sessionKey);
+
+  // ✅ 이 페이지 내부에서 실제로 쓸 세션 UUID
+  const [realSessionId, setRealSessionId] = useState<string | null>(null);
+
+  // ✅ 로컬 저장 키는 sessionKey 기준 (코드로 접속하는 고객에게는 일관됨)
+  const storageKey = useMemo(() => `liveorder:mytokens:${sessionKey}`, [sessionKey]);
 
   const loadMyTokens = useCallback((): MyOrderToken[] => {
     try {
@@ -66,13 +71,27 @@ export default function SessionOrderPage({ params }: { params: { sessionId: stri
     setMyTokens(loadMyTokens());
   }, [loadMyTokens]);
 
+  // ✅ 핵심 변경: sessionKey(코드/UUID) -> resolve -> realSessionId(UUID) 확보 -> 기존 /api/session/{uuid} 호출
   useEffect(() => {
     (async () => {
       setLoaded(false);
       setMsg("");
 
       try {
-        const res = await fetch(`/api/session/${sessionId}`, { cache: "no-store" });
+        // 1) resolve
+        const r1 = await fetch(`/api/public/session/resolve?key=${encodeURIComponent(sessionKey)}`, {
+          cache: "no-store",
+        });
+        const j1 = await r1.json();
+        if (!r1.ok) throw new Error(j1?.error ?? "세션을 불러오지 못했어요.");
+
+        const sid = String(j1.sessionId ?? "");
+        if (!sid) throw new Error("세션을 불러오지 못했어요.");
+
+        setRealSessionId(sid);
+
+        // 2) 기존 API 그대로 사용
+        const res = await fetch(`/api/session/${sid}`, { cache: "no-store" });
         const json = await res.json();
         if (!res.ok) throw new Error(json?.error ?? "세션을 불러오지 못했어요.");
 
@@ -82,11 +101,12 @@ export default function SessionOrderPage({ params }: { params: { sessionId: stri
         setMsg(e?.message ?? "불러오기 실패");
         setSession(null);
         setProducts([]);
+        setRealSessionId(null);
       } finally {
         setLoaded(true);
       }
     })();
-  }, [sessionId]);
+  }, [sessionKey]);
 
   const total = useMemo(() => {
     const priceById = new Map(products.map((p) => [p.id, p.price] as const));
@@ -285,10 +305,10 @@ export default function SessionOrderPage({ params }: { params: { sessionId: stri
           products={visibleProducts as any}
           qtyById={qtyById}
           setQty={(id, qty) => {
-  const p = (products as any[]).find((x) => x.id === id);
-  if (p?.is_soldout) return; // ✅ 품절이면 담기/수량변경 불가
-  setQtyById((prev) => ({ ...prev, [id]: qty }));
-}}
+            const p = (products as any[]).find((x) => x.id === id);
+            if (p?.is_soldout) return; // ✅ 품절이면 담기/수량변경 불가
+            setQtyById((prev) => ({ ...prev, [id]: qty }));
+          }}
         />
       </section>
 
@@ -311,6 +331,8 @@ export default function SessionOrderPage({ params }: { params: { sessionId: stri
               if (!phone.trim()) throw new Error("연락처를 입력하세요.");
               if (shipping !== "픽업" && !addr1.trim()) throw new Error("주소를 입력하세요. (픽업은 주소 생략 가능)");
 
+              if (!realSessionId) throw new Error("세션을 확인하는 중입니다. 잠시 후 다시 시도해주세요.");
+
               const lines = Object.entries(qtyById)
                 .map(([product_id, qty]) => ({ product_id, qty: Number(qty) || 0 }))
                 .filter((l) => l.qty > 0);
@@ -321,7 +343,7 @@ export default function SessionOrderPage({ params }: { params: { sessionId: stri
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                  sessionId,
+                  sessionId: realSessionId, // ✅ 항상 UUID로 저장
                   nickname: nn,
                   shipping,
                   phone: phone.trim(),

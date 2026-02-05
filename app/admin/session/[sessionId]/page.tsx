@@ -1,647 +1,538 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Product, Session } from "@/lib/types";
+import Link from "next/link";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 
-type EditForm = {
-  name: string;
-  price: string;
-  image_url: string;
-  sort_order: string;
+type Session = {
+  id: string;
+  title: string;
+  is_closed: boolean;
+  code?: string | null;
+  created_at?: string | null;
 };
 
-type ManualLine = { product_id: string; qty: number };
+type Product = {
+  id: string;
+  name: string;
+  price: number;
+  image_url?: string | null;
+  is_soldout?: boolean | null;
+  is_active?: boolean | null;
+  sort_order?: number | null;
+};
 
-// 배송 타입(프로젝트에 이미 쓰는 값이 있으면 그걸로 맞추면 됨)
-type ShippingType = "택배" | "직거래" | "기타";
+type AdminOrder = {
+  id: string;
+  nickname: string;
+  phone?: string | null;
+
+  postal_code?: string | null;
+  address1?: string | null;
+  address2?: string | null;
+
+  shipping?: string | null;
+
+  admin_note?: string | null;
+  paid_at?: string | null;
+  shipped_at?: string | null;
+  deleted_at?: string | null;
+  is_manual?: boolean | null;
+
+  total_qty: number;
+  total_amount: number;
+  created_at?: string | null;
+};
+
+function formatDT(v?: string | null) {
+  if (!v) return "";
+  try {
+    return new Date(v).toLocaleString("ko-KR");
+  } catch {
+    return String(v);
+  }
+}
+
+function money(n: number) {
+  return (Number(n) || 0).toLocaleString("ko-KR");
+}
+
+function compactAddr(o: AdminOrder) {
+  const a = [o.postal_code, o.address1, o.address2].filter(Boolean).join(" ");
+  return a || "-";
+}
 
 export default function AdminSessionPage({ params }: { params: { sessionId: string } }) {
   const { sessionId } = params;
 
+  // ===== Admin PIN (localStorage 저장) =====
+  const [adminPin, setAdminPin] = useState("");
+  const pinStorageKey = "liveorder:adminPin";
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(pinStorageKey) || "";
+      if (saved) setAdminPin(saved);
+    } catch {}
+  }, []);
+
+  const saveAdminPin = useCallback(() => {
+    try {
+      localStorage.setItem(pinStorageKey, adminPin.trim());
+      alert("관리자 PIN 저장 완료");
+    } catch {
+      alert("저장 실패");
+    }
+  }, [adminPin]);
+
+  // ===== Fetch helper (x-admin-pin 자동 첨부) =====
+  const adminFetch = useCallback(
+    async (url: string, init?: RequestInit) => {
+      const headers = new Headers(init?.headers || {});
+      if (!headers.get("Content-Type") && init?.method && init.method !== "GET") {
+        headers.set("Content-Type", "application/json");
+      }
+      headers.set("x-admin-pin", adminPin.trim());
+
+      const res = await fetch(url, {
+        ...init,
+        headers,
+        cache: "no-store",
+      });
+      const json = await res.json().catch(() => ({}));
+      return { res, json };
+    },
+    [adminPin]
+  );
+
+  // ===== Page state =====
   const [loaded, setLoaded] = useState(false);
+  const [err, setErr] = useState("");
   const [session, setSession] = useState<Session | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
-  const [orders, setOrders] = useState<any[]>([]);
-  const [notice, setNotice] = useState("");
-  const [msg, setMsg] = useState("");
+  const [orders, setOrders] = useState<AdminOrder[]>([]);
+  const [toast, setToast] = useState("");
 
-  // 신규 상품 등록 (이미지 선택사항)
-  const [newName, setNewName] = useState("");
-  const [newPrice, setNewPrice] = useState(0);
-  const [newFile, setNewFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const newPreview = useMemo(() => (newFile ? URL.createObjectURL(newFile) : null), [newFile]);
-
-  // ✅ 주문 필터
+  // ===== Filters =====
   const [onlyUnpaid, setOnlyUnpaid] = useState(false);
   const [onlyUnshipped, setOnlyUnshipped] = useState(false);
-  const [includeDeleted, setIncludeDeleted] = useState(false);
+  const [hideDeleted, setHideDeleted] = useState(true);
+  const [q, setQ] = useState("");
 
-  // 상품 인라인 수정
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [edit, setEdit] = useState<EditForm>({
-    name: "",
-    price: "0",
-    image_url: "",
-    sort_order: "1",
-  });
-  const [savingEdit, setSavingEdit] = useState(false);
-
-  async function apiJson(url: string, init?: RequestInit) {
-    const res = await fetch(url, init);
-    const json = await res.json().catch(() => ({}));
-    // 관리자 API들 응답키가 error/message 혼재할 수 있어 둘 다 처리
-    if (!res.ok) throw new Error(json?.error ?? json?.message ?? `HTTP ${res.status}`);
-    return json;
-  }
-
-  async function reload() {
+  // ===== Load session data =====
+  const load = useCallback(async () => {
     setLoaded(false);
-    setMsg("");
+    setErr("");
+    setToast("");
 
     try {
-      const j = await apiJson(`/api/admin/session/${sessionId}`, { cache: "no-store" });
-      setSession(j.session);
-      setProducts(j.products ?? []);
-      setNotice(j.notice ?? "");
+      if (!adminPin.trim()) throw new Error("관리자 PIN을 입력하세요.");
 
-      // ✅ includeDeleted 반영해서 서버에서 주문 가져오기
-      const j2 = await apiJson(
-        `/api/admin/orders?sessionId=${encodeURIComponent(sessionId)}&includeDeleted=${includeDeleted ? "1" : "0"}`,
-        { cache: "no-store" }
-      );
-      setOrders(j2.orders ?? []);
+      // ✅ 여기 URL이 너 프로젝트와 다르면 이 줄만 바꾸면 됨
+      const { res, json } = await adminFetch(`/api/admin/session/${sessionId}`, { method: "GET" });
+
+      if (!res.ok) throw new Error(json?.error ?? "세션 데이터를 불러오지 못했어요.");
+
+      setSession(json.session ?? null);
+      setProducts(Array.isArray(json.products) ? json.products : []);
+      setOrders(Array.isArray(json.orders) ? json.orders : []);
     } catch (e: any) {
-      setMsg(e?.message ?? "불러오기 실패");
       setSession(null);
       setProducts([]);
       setOrders([]);
-      setNotice("");
+      setErr(e?.message ?? "불러오기 실패");
     } finally {
       setLoaded(true);
     }
-  }
+  }, [adminFetch, adminPin, sessionId]);
 
   useEffect(() => {
-    reload();
+    // PIN이 저장되어 있으면 자동 로딩 시도
+    if (adminPin.trim()) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
+  }, [adminPin, sessionId]);
 
-  // ✅ includeDeleted 변경 시 서버 재조회(삭제포함 토글 반영)
-  useEffect(() => {
-    if (!loaded) return;
-    reload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [includeDeleted]);
+  // ===== Session code (짧은 코드) =====
+  const sessionCode = session?.code ?? null;
 
-  if (!loaded) return <div className="text-slate-600">불러오는 중…</div>;
-  if (!session) return <div className="text-slate-600">세션 없음. {msg}</div>;
-
-  const isDeleted = !!(session as any)?.is_deleted;
-
-  // 세션 LIVE/마감
-  async function setLive(next: boolean) {
+  const ensureCode = useCallback(async () => {
+    setToast("");
     try {
-      const j = await apiJson("/api/admin/session/toggle", {
+      if (!adminPin.trim()) throw new Error("관리자 PIN을 입력하세요.");
+
+      const { res, json } = await adminFetch("/api/admin/session/code/ensure", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId, is_closed: !next ? true : false }),
-      });
-      if (j?.session) setSession(j.session);
-    } catch (e: any) {
-      alert(e?.message ?? "상태 변경 실패");
-    }
-  }
-
-  // 세션 삭제/복구
-  async function onToggleDeleteRestore() {
-    try {
-      const jCount = await apiJson(
-        `/api/admin/session/order-count?sessionId=${encodeURIComponent(sessionId)}`,
-        { cache: "no-store" }
-      );
-      const orderCount = jCount?.ok ? Number(jCount.count ?? 0) : 0;
-
-      if (!isDeleted) {
-        const ok = confirm(
-          orderCount > 0
-            ? `⚠️ 이 세션에는 주문이 ${orderCount}건 있습니다.\n\n세션을 삭제(숨김)해도 주문 데이터는 남아있습니다.\n정말 삭제할까요?`
-            : "정말 이 세션을 삭제할까요?\n(세션은 목록에서 숨김 처리됩니다.)"
-        );
-        if (!ok) return;
-
-        const j = await apiJson("/api/admin/session/delete", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId }),
-        });
-        if (!j?.ok) throw new Error(j?.error ?? "삭제 실패");
-        await reload();
-        return;
-      }
-
-      const ok2 = confirm("이 세션을 복구할까요? (목록에 다시 표시됩니다)");
-      if (!ok2) return;
-
-      const j2 = await apiJson("/api/admin/session/restore", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId }),
       });
-      if (!j2?.ok) throw new Error(j2?.error ?? "복구 실패");
-      await reload();
-    } catch (e: any) {
-      alert(e?.message ?? "처리 실패");
-    }
-  }
 
-  // 상품: 품절 토글
-  async function toggleSoldout(id: string) {
+      if (!res.ok) throw new Error(json?.error ?? "코드 생성 실패");
+
+      // 세션 재로딩 대신 부분 업데이트
+      setSession((prev) => (prev ? { ...prev, code: String(json.code) } : prev));
+      setToast("✅ 코드가 생성되었습니다.");
+    } catch (e: any) {
+      setToast(`❗ ${e?.message ?? "실패"}`);
+    }
+  }, [adminFetch, adminPin, sessionId]);
+
+  const copyCustomerLink = useCallback(async () => {
     try {
-      await apiJson("/api/admin/product/toggle-soldout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
+      if (!sessionCode) return;
+      const url = `${location.origin}/s/${sessionCode}`;
+      await navigator.clipboard.writeText(url);
+      setToast("✅ 고객 링크를 복사했어요.");
+    } catch {
+      setToast("❗ 복사 실패");
+    }
+  }, [sessionCode]);
+
+  // ===== Stats =====
+  const stats = useMemo(() => {
+    const activeOrders = orders.filter((o) => !o.deleted_at);
+    const unpaid = activeOrders.filter((o) => !o.paid_at).length;
+    const unshipped = activeOrders.filter((o) => !o.shipped_at).length;
+    const totalAmount = activeOrders.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
+    return { unpaid, unshipped, totalAmount, activeCount: activeOrders.length, allCount: orders.length };
+  }, [orders]);
+
+  // ===== Filtered orders =====
+  const filteredOrders = useMemo(() => {
+    let arr = [...orders];
+
+    if (hideDeleted) arr = arr.filter((o) => !o.deleted_at);
+    if (onlyUnpaid) arr = arr.filter((o) => !o.paid_at);
+    if (onlyUnshipped) arr = arr.filter((o) => !o.shipped_at);
+
+    const keyword = q.trim().toLowerCase();
+    if (keyword) {
+      arr = arr.filter((o) => {
+        const hay = [
+          o.nickname,
+          o.phone,
+          o.shipping,
+          o.postal_code,
+          o.address1,
+          o.address2,
+          o.admin_note,
+          o.id,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return hay.includes(keyword);
       });
-      await reload();
-    } catch (e: any) {
-      alert(e?.message ?? "품절 처리 실패");
     }
-  }
 
-  // 상품: 삭제(숨김)
-  async function deleteProduct(id: string) {
-    const ok = confirm("이 상품을 삭제(숨김)할까요?");
-    if (!ok) return;
-    try {
-      await apiJson("/api/admin/product/delete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productId: id }),
-      });
-      await reload();
-    } catch (e: any) {
-      alert(e?.message ?? "삭제 실패");
-    }
-  }
+    // 최신순
+    arr.sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
+    return arr;
+  }, [orders, hideDeleted, onlyUnpaid, onlyUnshipped, q]);
 
-  // 상품: 수정 시작/취소/저장
-  function startEdit(p: any) {
-    setEditingId(p.id);
-    setEdit({
-      name: String(p.name ?? ""),
-      price: String(p.price ?? 0),
-      image_url: String(p.image_url ?? ""),
-      sort_order: String(p.sort_order ?? 1),
-    });
-  }
-
-  function cancelEdit() {
-    setEditingId(null);
-    setEdit({ name: "", price: "0", image_url: "", sort_order: "1" });
-  }
-
-  async function saveEdit() {
-    if (!editingId) return;
-
-    const name = edit.name.trim();
-    const price = Number(String(edit.price ?? "0").replace(/[^0-9]/g, "")) || 0;
-    const sort_order = Number(String(edit.sort_order ?? "1").replace(/[^0-9]/g, "")) || 1;
-    const image_url = edit.image_url.trim();
-
-    if (!name) return alert("상품명을 입력하세요.");
-    if (price <= 0) return alert("가격을 1원 이상 입력하세요.");
-    if (sort_order <= 0) return alert("정렬(sort_order)을 1 이상 입력하세요.");
-
-    setSavingEdit(true);
-    try {
-      await apiJson("/api/admin/product/update", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: editingId,
-          name,
-          price,
-          sort_order,
-          image_url: image_url ? image_url : null,
-        }),
-      });
-      await reload();
-      cancelEdit();
-    } catch (e: any) {
-      alert(e?.message ?? "수정 실패");
-    } finally {
-      setSavingEdit(false);
-    }
-  }
-
-  // 상품: 등록 (이미지 선택사항)
-  async function createProduct() {
-    const name = newName.trim();
-    if (!name) return alert("물품명을 입력하세요.");
-    if (newPrice <= 0) return alert("가격을 1원 이상 입력하세요.");
-
-    setUploading(true);
-    try {
-      if (newFile) {
-        const fd = new FormData();
-        fd.append("sessionId", sessionId);
-        fd.append("name", name);
-        fd.append("price", String(newPrice));
-        fd.append("file", newFile);
-
-        const res = await fetch("/api/admin/product/create-with-upload", { method: "POST", body: fd });
-        const j = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(j?.error ?? "업로드 실패");
-      } else {
-        await apiJson("/api/admin/product/create", {
+  // ===== Order actions =====
+  const togglePaid = useCallback(
+    async (orderId: string) => {
+      setToast("");
+      try {
+        const { res, json } = await adminFetch("/api/admin/orders/paid", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId, name, price: newPrice }),
+          body: JSON.stringify({ orderId }),
         });
+        if (!res.ok) throw new Error(json?.error ?? "입금 처리 실패");
+        await load();
+        setToast("✅ 입금 상태가 변경되었습니다.");
+      } catch (e: any) {
+        setToast(`❗ ${e?.message ?? "실패"}`);
       }
+    },
+    [adminFetch, load]
+  );
 
-      setNewName("");
-      setNewPrice(0);
-      setNewFile(null);
-      await reload();
-    } catch (e: any) {
-      alert(e?.message ?? "등록 실패");
-    } finally {
-      setUploading(false);
-    }
-  }
+  const toggleShipped = useCallback(
+    async (orderId: string) => {
+      setToast("");
+      try {
+        const { res, json } = await adminFetch("/api/admin/orders/shipped", {
+          method: "POST",
+          body: JSON.stringify({ orderId }),
+        });
+        if (!res.ok) throw new Error(json?.error ?? "발송 처리 실패");
+        await load();
+        setToast("✅ 발송 상태가 변경되었습니다.");
+      } catch (e: any) {
+        setToast(`❗ ${e?.message ?? "실패"}`);
+      }
+    },
+    [adminFetch, load]
+  );
 
-  async function saveNotice() {
-    try {
-      const j = await apiJson("/api/admin/notice/save", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId, notice }),
-      });
-      if (!j?.ok) throw new Error(j?.error ?? "저장 실패");
-      alert("저장 완료!");
-    } catch (e: any) {
-      alert(e?.message ?? "저장 실패");
-    }
-  }
+  const deleteOrder = useCallback(
+    async (orderId: string) => {
+      if (!confirm("이 주문을 삭제(숨김)할까요?")) return;
+      setToast("");
+      try {
+        const { res, json } = await adminFetch("/api/admin/orders/delete", {
+          method: "POST",
+          body: JSON.stringify({ orderId }),
+        });
+        if (!res.ok) throw new Error(json?.error ?? "삭제 실패");
+        await load();
+        setToast("✅ 주문이 삭제 처리되었습니다.");
+      } catch (e: any) {
+        setToast(`❗ ${e?.message ?? "실패"}`);
+      }
+    },
+    [adminFetch, load]
+  );
 
-  // ✅ 주문: 입금/발송 토글
-  async function togglePaid(orderId: string) {
-    try {
-      await apiJson("/api/admin/orders/toggle-paid", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderId }),
-      });
-      await reload();
-    } catch (e: any) {
-      alert(e?.message ?? "입금 상태 변경 실패");
-    }
-  }
-
-  async function toggleShipped(orderId: string) {
-    try {
-      await apiJson("/api/admin/orders/toggle-shipped", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderId }),
-      });
-      await reload();
-    } catch (e: any) {
-      alert(e?.message ?? "발송 상태 변경 실패");
-    }
-  }
-
-  // ✅ 화면 필터(클라) 적용
-  const visibleOrders = (orders ?? []).filter((o: any) => {
-    if (!includeDeleted && o.deleted_at) return false;
-    if (onlyUnpaid && o.paid_at) return false;
-    if (onlyUnshipped && o.shipped_at) return false;
-    return true;
-  });
-
+  // ===== UI =====
   return (
     <main className="space-y-6">
-      <header className="flex items-start justify-between gap-3">
-        <div>
-          <div className="badge">관리자</div>
-          <h1 className="mt-2 text-2xl font-bold">{session.title}</h1>
-          <div className="mt-1 text-sm text-slate-600">
-            세션ID: <span className="font-mono">{session.id}</span>
+      <header className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="space-y-1">
+          <div className="badge">ADMIN · 세션 관리</div>
+          <h1 className="text-2xl font-bold">{session?.title ?? "세션"}</h1>
+          <div className="text-sm text-slate-600">
+            세션ID: <span className="font-mono">{sessionId}</span>
+            {session?.created_at ? <span className="ml-2">· 생성 {formatDT(session.created_at)}</span> : null}
           </div>
+          {session?.is_closed ? (
+            <div className="mt-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-amber-900">
+              이 세션은 <b>마감</b> 상태입니다.
+            </div>
+          ) : null}
         </div>
-<div className="flex gap-2">
-  <a className="btn" href={`/s/${sessionId}`}>
-    고객 페이지
-  </a>
-  <a className="btn" href="/admin">
-    세션 목록
-  </a>
 
-  {/* ✅ 여기 추가 */}
-  <a className="btnPrimary" href={`/admin/session/${sessionId}/manual`}>
-    수기 주문 추가
-  </a>
-
-  <a className="btnPrimary" href={`/admin/session/${sessionId}/summary`}>
-    판매현황
-  </a>
-  <button className="btn" onClick={onToggleDeleteRestore}>
-    {isDeleted ? "세션 복구" : "세션 삭제"}
-  </button>
-</div>
-
-      </header>
-
-      {msg && <div className="card p-4 text-sm">{msg}</div>}
-
-      <section className="card p-4 md:p-6 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="font-semibold">방송 상태</div>
-          {session.is_closed ? <span className="badge">마감</span> : <span className="badge">LIVE</span>}
-        </div>
         <div className="flex flex-wrap gap-2">
-          <button className="btn" onClick={() => setLive(true)}>
-            LIVE로 열기
-          </button>
-          <button className="btnPrimary" onClick={() => setLive(false)}>
-            방송 마감
-          </button>
-        </div>
-      </section>
-
-      {/* 물품 관리 */}
-      <section className="card p-4 md:p-6 space-y-3">
-        <div className="font-semibold">판매 물품 관리 (이미지 선택사항)</div>
-
-        <div className="grid grid-cols-1 gap-2">
-          {products.map((p: any) => {
-            const isEditing = editingId === p.id;
-
-            return (
-              <div key={p.id} className="rounded-xl border border-slate-200 bg-white px-3 py-3 space-y-2">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    {p.image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={p.image_url}
-                        alt={p.name}
-                        className="h-12 w-12 rounded-lg object-cover border border-slate-200"
-                      />
-                    ) : (
-                      <div className="h-12 w-12 rounded-lg bg-slate-100 border border-slate-200" />
-                    )}
-
-                    <div className="min-w-0">
-                      <div className="font-semibold truncate">
-                        {p.name}
-                        {p.is_soldout && <span className="ml-2 badge">품절</span>}
-                      </div>
-                      <div className="text-sm text-slate-600">{Number(p.price ?? 0).toLocaleString("ko-KR")}원</div>
-                      <div className="text-xs text-slate-500">sort_order: {p.sort_order ?? 1}</div>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2 justify-end">
-                    {!isEditing ? (
-                      <>
-                        <button className="btn" onClick={() => startEdit(p)}>
-                          수정
-                        </button>
-                        <button className="btn" onClick={() => toggleSoldout(p.id)}>
-                          {p.is_soldout ? "품절해제" : "품절"}
-                        </button>
-                        <button className="btn" onClick={() => deleteProduct(p.id)}>
-                          삭제
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button className="btn" onClick={cancelEdit} disabled={savingEdit}>
-                          취소
-                        </button>
-                        <button className="btnPrimary" onClick={saveEdit} disabled={savingEdit}>
-                          {savingEdit ? "저장중..." : "저장"}
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {isEditing && (
-                  <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
-                    <input
-                      className="input md:col-span-2"
-                      placeholder="상품명"
-                      value={edit.name}
-                      onChange={(e) => setEdit((s) => ({ ...s, name: e.target.value }))}
-                    />
-                    <input
-                      className="input"
-                      placeholder="가격"
-                      inputMode="numeric"
-                      value={edit.price}
-                      onChange={(e) => setEdit((s) => ({ ...s, price: e.target.value }))}
-                    />
-                    <input
-                      className="input"
-                      placeholder="정렬(sort_order)"
-                      inputMode="numeric"
-                      value={edit.sort_order}
-                      onChange={(e) => setEdit((s) => ({ ...s, sort_order: e.target.value }))}
-                    />
-                    <input
-                      className="input md:col-span-4"
-                      placeholder="이미지 URL(선택)"
-                      value={edit.image_url}
-                      onChange={(e) => setEdit((s) => ({ ...s, image_url: e.target.value }))}
-                    />
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        {/* 신규 상품 추가 */}
-        <div className="grid grid-cols-1 gap-2 md:grid-cols-[1fr_160px_1fr_120px] pt-2 items-center">
-          <input className="input" placeholder="물품명" value={newName} onChange={(e) => setNewName(e.target.value)} />
-          <input
-            className="input"
-            placeholder="가격"
-            value={newPrice}
-            onChange={(e) => setNewPrice(Number(e.target.value.replace(/[^0-9]/g, "")) || 0)}
-          />
-          <div className="flex items-center gap-2">
-            <input
-              className="input"
-              type="file"
-              accept="image/*"
-              onChange={(e) => setNewFile(e.target.files?.[0] ?? null)}
-            />
-            {newPreview && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={newPreview} alt="preview" className="h-10 w-10 rounded-lg object-cover border border-slate-200" />
-            )}
-          </div>
-          <button className="btnPrimary" disabled={uploading} onClick={createProduct}>
-            {uploading ? "처리중..." : "추가"}
-          </button>
-        </div>
-
-        <div className="text-xs text-slate-500">* 이미지는 선택사항입니다. (없어도 등록 가능)</div>
-      </section>
-
-      {/* 안내문 */}
-      <section className="card p-4 md:p-6 space-y-3">
-        <div className="font-semibold">안내문(정산서 오른쪽)</div>
-        <textarea
-          className="input h-[240px] font-mono text-sm leading-6"
-          value={notice}
-          onChange={(e) => setNotice(e.target.value)}
-        />
-        <button className="btnPrimary" onClick={saveNotice}>
-          안내문 저장
-        </button>
-      </section>
-
-      {/* 주문 */}
-      <section className="card p-4 md:p-6 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="font-semibold">주문(주소/연락처 포함)</div>
-          <span className="badge">{visibleOrders.length}건</span>
-        </div>
-
-        {/* ✅ 필터 + 새로고침 */}
-        <div className="flex flex-wrap gap-3 items-center">
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={onlyUnpaid} onChange={(e) => setOnlyUnpaid(e.target.checked)} />
-            미입금만
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={onlyUnshipped} onChange={(e) => setOnlyUnshipped(e.target.checked)} />
-            미발송만
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={includeDeleted} onChange={(e) => setIncludeDeleted(e.target.checked)} />
-            삭제포함
-          </label>
-          <button className="btn" onClick={reload}>
+          <Link className="btn" href="/admin">
+            관리자 홈
+          </Link>
+          <Link className="btn" href={`/admin/session/${sessionId}/manual`}>
+            수기주문
+          </Link>
+          <button className="btnPrimary" onClick={load} disabled={!adminPin.trim()}>
             새로고침
           </button>
         </div>
+      </header>
 
-<div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-  <table className="w-full text-sm table-fixed">
-    <thead className="bg-slate-50 text-slate-700">
-      <tr>
-        <th className="px-3 py-2 text-left w-[90px]">닉네임</th>
-        <th className="px-3 py-2 text-left w-[110px]">연락처</th>
-        <th className="px-3 py-2 text-left w-[60px]">배송</th>
-        <th className="px-3 py-2 text-left">주소</th>
-        <th className="px-3 py-2 text-left w-[86px]">입금</th>
-        <th className="px-3 py-2 text-left w-[86px]">발송</th>
-        <th className="px-3 py-2 text-right w-[240px]">작업</th>
-      </tr>
-    </thead>
+      {/* 관리자 PIN */}
+      <section className="card p-4 md:p-6 space-y-3">
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div className="flex-1">
+            <label className="text-sm font-semibold">관리자 PIN</label>
+            <input
+              className="input mt-1"
+              value={adminPin}
+              onChange={(e) => setAdminPin(e.target.value)}
+              placeholder="관리자 PIN"
+            />
+            <div className="mt-1 text-xs text-slate-500">
+              * PIN은 이 브라우저에 저장됩니다. (localStorage)
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button className="btn" onClick={saveAdminPin}>
+              PIN 저장
+            </button>
+            <button className="btnPrimary" onClick={load} disabled={!adminPin.trim()}>
+              불러오기
+            </button>
+          </div>
+        </div>
 
-    <tbody className="divide-y divide-slate-200">
-      {visibleOrders.map((o: any) => {
-        const deleted = !!o.deleted_at;
-        const addr = (o.address1 ?? "") + (o.address2 ? " " + o.address2 : "");
-        const postal = o.postal_code ? `[${o.postal_code}]` : "";
-
-        return (
-          <tr key={o.id} className={deleted ? "opacity-60" : ""}>
-            <td className="px-3 py-2 font-semibold truncate">{o.nickname}</td>
-            <td className="px-3 py-2 truncate">{o.phone ?? "-"}</td>
-            <td className="px-3 py-2 truncate">{o.shipping ?? "-"}</td>
-
-            <td className="px-3 py-2 text-slate-700">
-              <div className="text-[11px] text-slate-500 truncate">{postal || ""}</div>
-              <div className="text-sm break-words leading-snug line-clamp-2">{addr || "-"}</div>
-            </td>
-
-            <td className="px-3 py-2">
-              <button
-                className={(o.paid_at ? "btnPrimary" : "btn") + " h-8 px-3 text-xs rounded-full"}
-                onClick={() => togglePaid(o.id)}
-              >
-                {o.paid_at ? "입금완료" : "미입금"}
-              </button>
-            </td>
-
-            <td className="px-3 py-2">
-              <button
-                className={(o.shipped_at ? "btnPrimary" : "btn") + " h-8 px-3 text-xs rounded-full"}
-                onClick={() => toggleShipped(o.id)}
-              >
-                {o.shipped_at ? "발송완료" : "미발송"}
-              </button>
-            </td>
-
-            <td className="px-3 py-2">
-              <div className="flex flex-wrap gap-1 justify-end">
-                <a className="btn h-8 px-3 text-xs rounded-full" href={`/order/edit/${o.edit_token}`}>
-                  수정
-                </a>
-                <a className="btnPrimary h-8 px-3 text-xs rounded-full" href={`/receipt/token/${o.edit_token}`}>
-                  정산서
-                </a>
-
-                <button
-                  className="btn h-8 px-3 text-xs rounded-full"
-                  onClick={async () => {
-                    const ok = confirm(`${o.nickname}님의 주문을 삭제(숨김)할까요?`);
-                    if (!ok) return;
-
-                    try {
-                      const j = await apiJson("/api/admin/orders/delete", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ orderId: o.id }),
-                      });
-                      if (!j?.ok) throw new Error(j?.error ?? "삭제 실패");
-                      await reload();
-                    } catch (e: any) {
-                      alert(e?.message ?? "삭제 실패");
-                    }
-                  }}
-                >
-                  삭제
-                </button>
-
-                <button
-                  className="btn h-8 px-3 text-xs rounded-full"
-                  onClick={async () => {
-                    const text = `[정산 안내]\n${o.nickname}님\n정산서: ${location.origin}/receipt/token/${o.edit_token}\n(위 링크에서 JPG 저장 가능)\n\n연락처: ${
-                      o.phone ?? "-"
-                    }\n배송: ${o.shipping ?? "-"}\n주소: ${postal ? postal + " " : ""}${addr}`;
-                    await navigator.clipboard.writeText(text);
-                    alert("카톡으로 보낼 문구를 복사했어요. 카카오톡에 붙여넣기 하시면 됩니다.");
-                  }}
-                >
-                  카톡
-                </button>
-              </div>
-            </td>
-          </tr>
-        );
-      })}
-
-      {visibleOrders.length === 0 && (
-        <tr>
-          <td className="px-3 py-3 text-slate-500" colSpan={7}>
-            주문이 없습니다.
-          </td>
-        </tr>
-      )}
-    </tbody>
-  </table>
-</div>
+        {toast ? <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm whitespace-pre-wrap">{toast}</div> : null}
+        {err ? <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900">{err}</div> : null}
       </section>
-    </main>
-  );
-}
+
+      {/* 고객 공유 링크 (코드) */}
+      <section className="card p-4 md:p-6 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <div className="font-semibold">고객 공유 링크</div>
+          <div className="flex gap-2">
+            {!sessionCode ? (
+              <button className="btnPrimary" onClick={ensureCode} disabled={!adminPin.trim()}>
+                코드 생성
+              </button>
+            ) : (
+              <button className="btnPrimary" onClick={copyCustomerLink}>
+                링크 복사
+              </button>
+            )}
+          </div>
+        </div>
+
+        {sessionCode ? (
+          <div className="text-sm text-slate-700">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="badge">CODE</span>
+              <span className="font-mono font-semibold">{sessionCode}</span>
+              <span className="text-slate-500">
+                {typeof window !== "undefined" ? `${location.origin}/s/${sessionCode}` : `/s/${sessionCode}`}
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div className="text-sm text-slate-600">아직 코드가 없습니다. “코드 생성”을 누르면 고객용 짧은 링크를 만들어요.</div>
+        )}
+      </section>
+
+      {/* 요약 */}
+      <section className="card p-4 md:p-6">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <div className="text-xs text-slate-500">주문(삭제 제외)</div>
+            <div className="mt-1 text-xl font-bold tabular-nums">{stats.activeCount}</div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <div className="text-xs text-slate-500">미입금</div>
+            <div className="mt-1 text-xl font-bold tabular-nums">{stats.unpaid}</div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <div className="text-xs text-slate-500">미발송</div>
+            <div className="mt-1 text-xl font-bold tabular-nums">{stats.unshipped}</div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <div className="text-xs text-slate-500">총 판매금액</div>
+            <div className="mt-1 text-xl font-bold tabular-nums">{money(stats.totalAmount)}원</div>
+          </div>
+        </div>
+      </section>
+
+      {/* 주문 필터 */}
+      <section className="card p-4 md:p-6 space-y-3">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div className="font-semibold">주문 관리</div>
+          <div className="text-sm text-slate-600">
+            표시 {filteredOrders.length}건 / 전체 {orders.length}건
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-12">
+          <div className="md:col-span-5">
+            <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="검색(닉네임/전화/주소/메모/ID)" />
+          </div>
+
+          <div className="md:col-span-7 flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={onlyUnpaid} onChange={(e) => setOnlyUnpaid(e.target.checked)} />
+              미입금만
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={onlyUnshipped} onChange={(e) => setOnlyUnshipped(e.target.checked)} />
+              미발송만
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={hideDeleted} onChange={(e) => setHideDeleted(e.target.checked)} />
+              삭제 제외
+            </label>
+          </div>
+        </div>
+
+        {/* 주문 테이블 */}
+        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+          <table className="w-full table-fixed">
+            <thead className="bg-slate-50 text-left text-xs text-slate-600">
+              <tr>
+                <th className="w-[140px] p-3">시간</th>
+                <th className="w-[160px] p-3">고객</th>
+                <th className="w-[340px] p-3">주소</th>
+                <th className="w-[120px] p-3">수량</th>
+                <th className="w-[140px] p-3">금액</th>
+                <th className="w-[220px] p-3">상태</th>
+                <th className="w-[220px] p-3">작업</th>
+              </tr>
+            </thead>
+            <tbody className="text-sm">
+              {filteredOrders.map((o) => (
+                <tr key={o.id} className={o.deleted_at ? "opacity-50" : ""}>
+                  <td className="p-3 align-top">
+                    <div className="text-xs text-slate-600">{formatDT(o.created_at)}</div>
+                    <div className="mt-1 text-xs text-slate-500 font-mono truncate">{o.id}</div>
+                    {o.is_manual ? <div className="mt-1 badge">수기</div> : null}
+                  </td>
+
+                  <td className="p-3 align-top">
+                    <div className="font-semibold truncate">{o.nickname}</div>
+                    <div className="text-xs text-slate-600 truncate">{o.phone ?? "-"}</div>
+                    {o.shipping ? <div className="mt-1 text-xs text-slate-500">배송: {o.shipping}</div> : null}
+                  </td>
+
+                  <td className="p-3 align-top">
+                    <div className="text-xs text-slate-700 break-words">{compactAddr(o)}</div>
+                    {o.admin_note ? (
+                      <div className="mt-2 text-xs text-slate-600 break-words">
+                        <span className="text-slate-400">메모:</span> {o.admin_note}
+                      </div>
+                    ) : null}
+                  </td>
+
+                  <td className="p-3 align-top tabular-nums">{Number(o.total_qty) || 0}</td>
+                  <td className="p-3 align-top tabular-nums font-semibold">{money(Number(o.total_amount) || 0)}원</td>
+
+                  <td className="p-3 align-top">
+                    <div className="flex flex-col gap-1 text-xs">
+                      <div>
+                        입금:{" "}
+                        {o.paid_at ? (
+                          <span className="text-emerald-700 font-semibold">완료</span>
+                        ) : (
+                          <span className="text-slate-500">미입금</span>
+                        )}
+                      </div>
+                      <div>
+                        발송:{" "}
+                        {o.shipped_at ? (
+                          <span className="text-emerald-700 font-semibold">완료</span>
+                        ) : (
+                          <span className="text-slate-500">미발송</span>
+                        )}
+                      </div>
+                      {o.deleted_at ? <div className="text-rose-700 font-semibold">삭제됨</div> : null}
+                    </div>
+                  </td>
+
+                  <td className="p-3 align-top">
+                    <div className="flex flex-wrap gap-2">
+                      <button className="btn" onClick={() => togglePaid(o.id)} disabled={!!o.deleted_at}>
+                        입금 토글
+                      </button>
+                      <button className="btn" onClick={() => toggleShipped(o.id)} disabled={!!o.deleted_at}>
+                        발송 토글
+                      </button>
+                      <button className="btnDanger" onClick={() => deleteOrder(o.id)}>
+                        삭제
+                      </button>
+                      <Link className="btn" href={`/receipt/order/${o.id}`}>
+                        정산서
+                      </Link>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+
+              {filteredOrders.length === 0 ? (
+                <tr>
+                  <td className="p-6 text-slate-500" colSpan={7}>
+                    표시할 주문이 없습니다.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="text-xs text-slate-500">
+          * 입금/발송 토글 API 경로가 너 프로젝트와 다르면{" "}
+          <span className="font-mono">/api/admin/orders/paid</span>,{" "}
+          <span className="font-mono">/api/admin/orders/shipped</span> 부분만 실제 경로로 바꾸면 됩니다.
+        </div>
+      </section>
+
+      {/* 상품 영역 (리스트만) */}
+      <section className="card p-4 md:p-6 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="font-semibold">상품</div>
+          <div className="text-sm text-slate-600">총 {products.length}개</div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+          {products.m
